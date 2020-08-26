@@ -17,7 +17,7 @@
 
 struct zbd_metadata
 {
-    unsigned int nr_zones_all, nr_zones_conv, nr_zones_seq;
+    uint32_t nr_zones_all, nr_zones_conv, nr_zones_seq;
 };
 
 struct zbc_device;
@@ -29,20 +29,16 @@ extern ssize_t zbd_pwrite(struct zbc_device *dev, const void *buf,
 			  size_t count, uint64_t offset);
 
 extern ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf, 
-                     unsigned int zoneId, uint64_t inzone_blkoff, size_t blkcnt);
+                     uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt);
               
 extern ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, bool force, 
-            unsigned int zoneId, uint64_t inzone_blkoff, size_t blkcnt);
+            uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt);
 
-extern int zbd_set_wp(struct zbc_device *dev, unsigned int zoneId, uint64_t inzone_blkoff);
+extern int zbd_set_wp(struct zbc_device *dev, uint32_t zoneId, uint64_t inzone_blkoff);
 
-#define _TEST_ 1
 
 #ifdef _TEST_
 #include "bitmap.h"
-
-extern ssize_t zbd_partread_by_bitmap(struct zbc_device *dev, 
-            unsigned int zoneId, void *zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap);
 #endif
 
 

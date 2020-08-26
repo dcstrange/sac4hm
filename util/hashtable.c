@@ -1,11 +1,12 @@
 /* Autor: Diansen Sun. Date: Aug 2020. */
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h> 
 
 struct hash_bucket
 {
-    unsigned long 	    key;
-    unsigned long 	    value; // 限制了value只能是数值型.
+    uint64_t 	    key;
+    uint64_t 	    value; // 限制了value只能是数值型.
     struct hash_bucket 	*next_bucket;
 };
 
@@ -17,12 +18,13 @@ struct hashtable_header
 
 struct hash_table
 {
-    struct hast_bucket *free_buckets;
+    struct hast_bucket *free_buckets, 
+                       *buckets_collection; // for free.
     struct hashtable_header *headers;
 
-    unsigned long length;
-    unsigned long max_buckets;
-    unsigned long item_count;
+    uint64_t length;
+    uint64_t max_buckets;
+    uint64_t item_count;
 };
 
 
@@ -33,7 +35,7 @@ struct hash_table
 static struct hash_bucket* allocbucket(struct hash_table *hashtb);
 static void freebucket(struct hash_table *hashtb, struct hash_bucket* bucket);
 
-int HashTab_Init(unsigned long max_items, struct hash_table **hashtb)
+int HashTab_crt(uint64_t max_items, struct hash_table **hashtb)
 {
     if(max_items == 0)
         return -1;
@@ -41,16 +43,18 @@ int HashTab_Init(unsigned long max_items, struct hash_table **hashtb)
     struct hash_table *ht = (struct hash_table *)malloc(sizeof(struct hash_table));
     
     ht->headers = (struct hashtable_header *)calloc(max_items, sizeof(struct hashtable_header));
-    ht->free_buckets = (struct hash_bucket*)calloc(max_items, sizeof(struct hash_bucket));
+    ht->buckets_collection = ht->free_buckets = (struct hash_bucket*)calloc(max_items, sizeof(struct hash_bucket));
     ht->length = ht->max_buckets = max_items;
     ht->item_count = 0;
 
 
-    if(ht->headers == NULL || ht->free_buckets == NULL)
+    if(ht->headers == NULL || ht->free_buckets == NULL){
+        HashTab_free(ht);
         return -1;
+    }
 
     struct hash_bucket *bucket = ht->free_buckets;
-    for(unsigned long i = 0; i < max_items; bucket++, i++)
+    for(uint64_t i = 0; i < max_items; bucket++, i++)
     {
         bucket->next_bucket = bucket + 1;
     }
@@ -61,13 +65,7 @@ int HashTab_Init(unsigned long max_items, struct hash_table **hashtb)
     return 0;
 }
 
-unsigned long HashTab_GetHashCode(struct hash_table *hashtb, unsigned long key)
-{
-    unsigned long hashcode = key % hashtb->length;
-    return hashcode;
-}
-
-int HashTab_Lookup(struct hash_table *hashtb, unsigned long key, unsigned long *value)
+int HashTab_Lookup(struct hash_table *hashtb, uint64_t key, uint64_t *value)
 {
     #ifdef DEBUG_HASH
         printf("[INFO] Lookup ssd_buf_tag: %lu\n",ssd_buf_tag.offset);
@@ -90,7 +88,7 @@ int HashTab_Lookup(struct hash_table *hashtb, unsigned long key, unsigned long *
     return -1;
 }
 
-int HashTab_Insert(struct hash_table *hashtb, unsigned long key, unsigned long value)
+int HashTab_Insert(struct hash_table *hashtb, uint64_t key, uint64_t value)
 {
     #ifdef DEBUG_HASH
         printf("[INFO] Insert buf_tag: %lu\n",ssd_buf_tag.offset);
@@ -116,7 +114,7 @@ int HashTab_Insert(struct hash_table *hashtb, unsigned long key, unsigned long v
     return 0;
 }
 
-int HashTab_Delete(struct hash_table *hashtb, unsigned long key)
+int HashTab_Delete(struct hash_table *hashtb, uint64_t key)
 {
     #ifdef DEBUG_HASH
         printf("[INFO] Delete buf_tag: %lu\n",ssd_buf_tag.offset);
@@ -149,6 +147,20 @@ int HashTab_Delete(struct hash_table *hashtb, unsigned long key)
 
     freebucket(hashtb, bucket);
     hashtb->item_count --;
+    return 0;
+}
+
+int HashTab_free(struct hash_table *hashtb)
+{
+    if(hashtb == NULL)
+        return -1;
+    if(hashtb->buckets_collection)
+        free(hashtb->buckets_collection);
+    
+    if(hashtb->headers)
+        free(hashtb->headers);
+    
+    free(hashtb);
     return 0;
 }
 

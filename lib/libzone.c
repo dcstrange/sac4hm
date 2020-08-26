@@ -21,7 +21,7 @@ int zbd_open(const char *filename, int flags, struct zbc_device **dev){
 }
  
 ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf, 
-                     unsigned int zoneId, uint64_t inzone_blkoff, size_t blkcnt)
+                     uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
 {
     uint64_t offset = (zoneId * N_ZONESEC) + (inzone_blkoff * N_BLKSEC);
     uint64_t count = blkcnt * N_BLKSEC;
@@ -39,7 +39,7 @@ ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf,
 
 
 ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, bool force, 
-            unsigned int zoneId, uint64_t inzone_blkoff, size_t blkcnt)
+            uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
 {
     if(force){
         // manually set write pointer. 
@@ -59,7 +59,7 @@ ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, bool force,
 }
 
 ssize_t zbd_read_zone(struct zbc_device *dev,  
-            unsigned int zoneId, uint64_t zone_offset, size_t count, 
+            uint32_t zoneId, uint64_t zone_offset, size_t count, 
             void *buf)
 {
     if(!MULTIPLE_4K(count)){
@@ -71,7 +71,7 @@ ssize_t zbd_read_zone(struct zbc_device *dev,
 }
 
 
-int zbd_set_wp(struct zbc_device *dev, unsigned int zoneId, uint64_t inzone_blkoff) 
+int zbd_set_wp(struct zbc_device *dev, uint32_t zoneId, uint64_t inzone_blkoff) 
 {
 	struct zbc_device_info info;
 
@@ -99,63 +99,6 @@ int zbd_set_wp(struct zbc_device *dev, unsigned int zoneId, uint64_t inzone_blko
 	return 0;
 }
 
-#include "bits.h"
-#include "bitmap.h"
-ssize_t zbd_partread_by_bitmap(struct zbc_device *dev, 
-            unsigned int zoneId, void *zonebuf, 
-            uint64_t from, uint64_t to, zBitmap *bitmap)
-{
-    ssize_t ret = 0, cnt = 0;
-    void *buf;
-    uint64_t zblkoff;
-
-    uint64_t start_word = BIT_WORD(from), 
-               end_word = BIT_WORD(to);
-    uint64_t start_word_offset = BIT_WORD_OFFSET(from), 
-               end_word_offset = BIT_WORD_OFFSET(to);
-
-    uint64_t this_word = start_word, 
-             pos_from = start_word_offset, 
-             pos_to = BITS_PER_LONG - 1;
-
-    while(this_word <= end_word){
-
-        if(this_word == end_word){ // end
-            pos_to = end_word_offset;
-        }
-
-        if(check_Bitword_hasZero(bitmap + this_word, pos_from, pos_to)){ 
-            // read clean blocks from zbd by 256KB at once.]
-            zblkoff = (this_word * BITS_PER_LONG) + pos_from;
-            buf = zonebuf + (zblkoff * BLKSIZE);
-
-            cnt = zbd_read_zblk(dev, buf, zoneId, zblkoff, pos_to - pos_from + 1);
-            if(cnt < 0)
-                return cnt;
-            
-            ret += cnt;
-        }
-
-        this_word ++;
-        pos_from = 0;
-    }
-
-    return ret;
-}
-
-ssize_t zbd_zone_RMW(unsigned int zoneId, uint64_t from_blk, uint64_t to_blk, void *zonebuf, void *bitmap)
-{
-    ssize_t ret;
-    /* Read blocks */
-    ret = zbd_partread_by_bitmap(dev, zoneId, zonebuf, from_blk, to_blk, bitmap);
-    
-    /* Modify refered to Bitmap */
-    
-    /* Set target zone write pointer */
- 
-    /* Write-Back */
-
-}
 
 
 static int check_aligned();

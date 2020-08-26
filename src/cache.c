@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <memory.h>
 #include <unistd.h>
+#include <linux/types.h>
+
 
 #include "trace2call.h"
 #include "timerUtils.h"
@@ -12,11 +15,14 @@
 
 #include "report.h"
 
+extern struct hash_table; 
+
+
 struct cache_page
 {
-    unsigned long   pos;                    // page postion in cache pages. 
-    unsigned long   tg_blk;                 // target block offset (by 4096B)
-    unsigned int    status;                 // 0 invalid, 1 valid, 2 dirty.
+    uint64_t   pos;                    // page postion in cache pages. 
+    uint64_t   tg_blk;                 // target block offset (by 4096B)
+    uint8_t    status;                 // 0 invalid, 1 valid, 2 dirty.
     struct cache_page *next_free_page;      
     // pthread_mutex_t lock;               // For the fine grain size
 };
@@ -29,6 +35,18 @@ struct cache_runtime cache_rt
     struct cache_page *header_free_page = NULL;
     //  pthread_mutex_t lock;
 };
+
+struct cache_algorithm{
+    int (*init)(int, int);
+    int (*hit)(int, int);
+    int (*login)(int, int);
+    int (*logout)(int, int);
+};
+
+
+struct hash_table *hashtb_cblk;  // hash index for cached block
+struct cache_algorithm algorithm;
+
 
 
 /* If Defined R/W Cache Space Static Allocated */
@@ -49,8 +67,6 @@ static int Strategy_Desp_LogIn(cache_page *desp);
 #define IsDirty(flag) ((flag & PAGE_DIRTY) != 0)
 #define IsClean(flag) ((flag & PAGE_DIRTY) == 0)
 
-void _LOCK(pthread_mutex_t *lock);
-void _UNLOCK(pthread_mutex_t *lock);
 
 /* stopwatch */
 static timeval tv_start, tv_stop;
@@ -77,7 +93,7 @@ void CacheLayer_Init()
 {
     int r_initdesp = init_cache_pages();
     int r_initstrategybuf = initStrategySSDBuffer();
-    int r_initbuftb = HashTab_Init();
+    int r_initbuftb = HashTab_crt(N_CACHE_PAGES, &hashtb_cblk); 
     int r_initstt = init_StatisticObj();
 
     printf("init_Strategy: %d, init_table: %d, init_desp: %d, inti_Stt: %d\n",
@@ -98,19 +114,19 @@ static int
 init_cache_pages()
 {
     cache_rt.pages = 
-    cache_rt.header_free_page = (struct cache_page *)malloc(sizeof(struct cache_page) * NBLOCK_SSD_CACHE);
+    cache_rt.header_free_page = (struct cache_page *)malloc(sizeof(struct cache_page) * N_CACHE_PAGES);
     
     if(cache_rt == NULL)
         return -1;
     
     struct cache_page *page = cache_rt.pages;
-    for (unsigned long i = 0; i < NBLOCK_SSD_CACHE; page++, i++)
+    for (unsigned long i = 0; i < N_CACHE_PAGES; page++, i++)
     {
         page->pos = i;
         page->status = 0;
         page->next_free_page = page + 1;
     }
-    cache_rt.pages[NBLOCK_SSD_CACHE - 1].next_free_page = NULL;
+    cache_rt.pages[N_CACHE_PAGES - 1].next_free_page = NULL;
     return 0;
 }
 
@@ -182,20 +198,37 @@ static void flagOp(cache_page *page, int opType)
     }
 }
 
+static cache_page * 
+retrive_cache_page(uint64_t tg_blk)
+{
+    /* Lookup if already cached. */
+    struct cache_page *page; 
+    uint64_t page_pos;
+
+    /* Cache miss */
+    if(HashTab_Lookup(hashtb_cblk, tg_blk, &page_pos) < 0) {return NULL;}
+
+    /* Cache hit */
+    page = cache_rt.pages + pos;
+    return page;
+}
+
+static 
+
+
+
+
 static cache_page *
-allocSSDBuf(SSDBufTag ssd_buf_tag, int *found, int alloc4What)
+allocSSDBuf(uint64_t tg_blk, int *found, int alloc4What)
 {
 
     /* Lookup if already cached. */
-    cache_page *page; //returned value.
-    unsigned long ssd_buf_hash = HashTab_GetHashCode(ssd_buf_tag);
-    long pos = HashTab_Lookup(ssd_buf_tag, ssd_buf_hash);
+    struct cache_page *page; //returned value.
 
-    /* Cache HIT */
-    if (pos >= 0)
-    {
+    uint64_t page_pos;
+    if(HashTab_Lookup(hashtb_cblk, tg_blk, &page_pos) == 0){
+        /* Cache HIT */
         page = cache_rt.pages + pos;
-        _LOCK(&page->lock);
 
         /* count wt_hit_rd and rd_hit_wt */
         if (alloc4What == 0 && IsDirty(page->status))
@@ -445,7 +478,6 @@ void read_block(off_t offset, char *ssd_buffer)
         STT->flush_ssd_blocks++;
     }
 
-    _UNLOCK(&page->lock);
 }
 
 /*
@@ -493,7 +525,6 @@ void write_block(off_t offset, char *ssd_buffer)
     STT->time_write_ssd += Mirco2Sec(msec_w_ssd);
     STT->flush_ssd_blocks++;
 
-    _UNLOCK(&page->lock);
 }
 
 /******************
@@ -569,18 +600,4 @@ push_freebuf(cache_page *freeDesp)
     freeDesp->next_free_page = cache_rt.header_free_page;
     cache_rt.header_free_page = freeDesp->pos;
     return cache_rt.header_free_page;
-}
-
-void _LOCK(pthread_mutex_t *lock)
-{
-#ifdef MULTIUSER
-    SHM_mutex_lock(lock);
-#endif // MULTIUSER
-}
-
-void _UNLOCK(pthread_mutex_t *lock)
-{
-#ifdef MULTIUSER
-    SHM_mutex_unlock(lock);
-#endif // MULTIUSER
 }
