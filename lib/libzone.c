@@ -145,14 +145,15 @@ ssize_t zbd_partread_by_bitmap(struct zbc_device *dev,
 
 ssize_t zbd_zone_RMW(unsigned int zoneId, uint64_t from_blk, uint64_t to_blk, void *zonebuf, void *bitmap)
 {
-/* Read blocks */
-
-/* Modify refered to Bitmap */
-
-/* Set target zone write pointer */
+    ssize_t ret;
+    /* Read blocks */
+    ret = zbd_partread_by_bitmap(dev, zoneId, zonebuf, from_blk, to_blk, bitmap);
+    
+    /* Modify refered to Bitmap */
+    
+    /* Set target zone write pointer */
  
-/* Write-Back */
-
+    /* Write-Back */
 
 }
 
