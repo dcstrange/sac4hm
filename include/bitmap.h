@@ -13,6 +13,6 @@ extern void set_Bit(zBitmap *bitmap, uint64_t pos_bit);
 extern void clean_Bit(zBitmap *bitmap, uint64_t pos_bit);
 extern void set_Bitword(zBitmap *bitword);
 extern void clean_Bitword(zBitmap *bitword);
-extern int check_Bitword_hasZero(zBitmap *bitword, long from, long to);
-
+extern int check_Bitword_hasZero(zBitmap *bitword, int from, int to);
+extern void clean_Bitmap(zBitmap *bitmap, int from, int to);
 #endif

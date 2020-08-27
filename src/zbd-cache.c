@@ -2,18 +2,16 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <memory.h>
-#include <unistd.h>
+#define _GNU_SOURCE
+#include <unistd.h> //pread pwrite
 #include <linux/types.h>
 
 
-#include "trace2call.h"
+
 #include "timerUtils.h"
 #include "cache.h"
 #include "util/hashtable.h"
-
-#include "strategy/strategies.h"
-
-#include "report.h"
+#include "util/log.h"
 
 #include "bits.h"
 #include "bitmap.h"
@@ -27,21 +25,23 @@ struct cache_page
 {
     uint64_t   pos;                    // page postion in cache pages. 
     uint64_t   tg_blk;                 // target block offset (by 4096B)
-    uint8_t    status;                 // 0 invalid, 1 valid, 2 dirty.
-    struct cache_page *next_free_page;      
+    uint8_t    status;                 // 
+    struct cache_page *next_page;      
+    uint32_t belong_zoneId;
+    uint32_t blkoff_inzone;
     // pthread_mutex_t lock;               // For the fine grain size
 };
 
 /* cache space runtime info. */
 struct cache_runtime       
 {
-    uint64_t    	   n_page_used = 0;			
-    struct cache_page *pages = NULL;
-    struct cache_page *header_free_page = NULL;
+    uint64_t    	   n_page_used;			
+    struct cache_page *pages;
+    struct cache_page *header_free_page;
     //  pthread_mutex_t lock;
 };
 
-struct cache_algorithm{
+struct cache_algorithm {
     int (*init)(int, int);
     int (*hit)(int, int);
     int (*login)(int, int);
@@ -50,8 +50,11 @@ struct cache_algorithm{
 
 struct zbd_zone{
     uint32_t zoneId;
-    uint64_t wtpr;
+    int wtpr;                           // in-zone block offset of write pointer
+
+    int cached; 
     zBitmap *bitmap;
+    void * private;                     // private used for algorithm. 
 };
 
 /* Global objects */
@@ -61,11 +64,22 @@ int cache_dev;
 struct hash_table *hashtb_cblk;  // hash index for cached block
 struct cache_algorithm algorithm;
 struct cache_runtime cache_rt = {
-    .n_page_used = 0;
-    .pages = NULL;
-    .header_free_page = NULL;
-}
+    .n_page_used = 0,
+    .pages = NULL,
+    .header_free_page = NULL
+};
+
 struct zbd_zone *zones_collection;
+
+static void* buf_rmw; // private buffer used to RMW. Note that, this only for single thread version. 
+    /* ZBD info */
+    // #define SECSIZE 512
+    // #define BLKSIZE 4096
+    // #define N_BLKSEC 8
+    // #define ZONESIZE 268435456
+    // #define N_ZONESEC 524288
+    // #define N_ZONEBLK 65536
+
 
 
 /* If Defined R/W Cache Space Static Allocated */
@@ -73,15 +87,13 @@ struct zbd_zone *zones_collection;
 static int init_cache_pages();
 static int init_StatisticObj();
 static void flushSSDBuffer(cache_page *page);
-static cache_page *allocSSDBuf(SSDBufTag ssd_buf_tag, int *found, int alloc4What);
 
 // Utilities of cache pages
 static inline cache_page * pop_freebuf();
 static inline void push_freebuf(cache_page *page);
  // Utilities of ZBD
 
-static ssize_t zbd_zone_RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk, void *zonebuf, zBitmap *bitmap);
-
+static int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap);
 
 
 static int initStrategySSDBuffer();
@@ -101,11 +113,6 @@ static timeval tv_start, tv_stop;
 int IsHit;
 microsecond_t msec_r_hdd, msec_w_hdd, msec_r_ssd, msec_w_ssd, msec_bw_hdd = 0;
 
-/* Device I/O operation with Timer */
-static int dev_pread(int fd, void *buf, size_t nbytes, off_t offset);
-static int dev_pwrite(int fd, void *buf, size_t nbytes, off_t offset);
-static int dev_simu_read(void *buf, size_t nbytes, off_t offset);
-static int dev_simu_write(void *buf, size_t nbytes, off_t offset);
 
 static char *ssd_buffer;
 
@@ -118,9 +125,8 @@ extern struct InitUsrInfo UsrInfo;
 void CacheLayer_Init()
 {
     int r_initdesp = init_cache_pages();
-    int r_initstrategybuf = initStrategySSDBuffer();
     int r_initbuftb = HashTab_crt(N_CACHE_PAGES, &hashtb_cblk); 
-    int r_initstt = init_StatisticObj();
+
 
     printf("init_Strategy: %d, init_table: %d, init_desp: %d, inti_Stt: %d\n",
            r_initstrategybuf, r_initbuftb, r_initdesp, r_initstt);
@@ -139,10 +145,11 @@ void CacheLayer_Init()
 static int
 init_cache_pages()
 {
+    /* init cache pages metadata */
     cache_rt.pages = 
     cache_rt.header_free_page = (struct cache_page *)malloc(sizeof(struct cache_page) * N_CACHE_PAGES);
     
-    if(cache_rt == NULL)
+    if(cache_rt.pages == NULL)
         return -1;
     
     struct cache_page *page = cache_rt.pages;
@@ -150,9 +157,32 @@ init_cache_pages()
     {
         page->pos = i;
         page->status = 0;
-        page->next_free_page = page + 1;
+        page->next_page = page + 1;
     }
-    cache_rt.pages[N_CACHE_PAGES - 1].next_free_page = NULL;
+    page --;
+    page->next_page = NULL; // the last one
+
+    /* init cached zone metadata */ 
+    zones_collection = (struct zbd_zone *)calloc(N_ZONES, sizeof(struct zbd_zone));
+    if(!zones_collection)
+        return -1;
+
+    struct zbd_zone* zone = zones_collection; 
+    
+    for(uint64_t i = 0; i < N_ZONES; i++, zone++){
+        zone->zoneId = i;
+        zone->wtpr = N_ZONEBLK - 1;
+
+        zone->cached = 0;
+        zone->page_map = NULL;
+        zone->bitmap = NULL;
+        zone->private = NULL;
+    }
+
+    /* init buffer for RMW */
+    buf_rmw = malloc(ZONESIZE);
+    if(!buf_rmw)
+        return -1;
     return 0;
 }
 
@@ -181,7 +211,7 @@ init_StatisticObj()
     return 0;
 }
 
-static cache_page * 
+static struct cache_page * 
 retrive_cache_page(uint64_t tg_blk)
 {
     /* Lookup if already cached. */
@@ -197,13 +227,42 @@ retrive_cache_page(uint64_t tg_blk)
 }
 
 static int 
-flush_zone_pages(uint32_t zoneId)
+flush_zone_pages()
 {
-    uint64_t blk_from, blk_to;
-    zbd_zone_RMW(zoneId, blk_from, blk_to,)
+    int ret;
+
+    uint32_t zoneId;
+    struct zbd_zone* tg_zone = zones_collection + zoneId;
+    uint64_t blk_from, blk_to = tg_zone->wtpr;
+
+    // call algorithm to decide which zone to be flush
+    uint32_t zoneId = algorithm.logout(blk_from, blk_to);
+
+    // do rmw
+    ret = zbd_zone_RMW(zoneId, blk_from, blk_to, buf_rmw, tg_zone->bitmap);
+    if(ret < 0)
+        log_err("RWM failed. \n");
+    
+    // process metadata
+    clean_Bitmap(tg_zone->bitmap, blk_from, blk_to);
+
+
+    while (1)
+    {
+        
+    }
+    
+    {
+        if(page->status & FOR_READ) {continue;}
+        
+
+    }
+    
+    
+
+    
+    return ret;
 }
-
-
 
 
 void read_block(off_t offset, char *ssd_buffer)
@@ -321,24 +380,58 @@ void write_block(off_t offset, char *ssd_buffer)
 /******************
 **** Cache Utilities *****
 *******************/
-static inline cache_page *
+static inline struct cache_page *
 pop_freebuf()
 {
     if (cache_rt.header_free_page < 0)
         return NULL;
-    cache_page *page = cache_rt.header_free_page;
-    cache_rt.header_free_page = page->next_free_page;
-    page->next_free_page = NULL;
+    struct cache_page *page = cache_rt.header_free_page;
+    cache_rt.header_free_page = page->next_page;
+    page->next_page = NULL;
     cache_rt.n_page_used ++;
     return page;
 }
 static inline void
-push_freebuf(cache_page *page)
+push_freebuf(struct cache_page *page)
 {
-    page->next_free_page = cache_rt.header_free_page;
+    page->next_page = cache_rt.header_free_page;
     cache_rt.header_free_page = page;
 
     cache_rt.n_page_used --;
+}
+
+
+static int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
+{
+    uint64_t offset = blkoff * BLKSIZE, 
+             nbytes = blkcnt * BLKSIZE;
+
+    #ifdef NO_REAL_DISK_IO
+        return nbytes;
+    #endif
+
+    
+    _TimerLap(&tv_start);
+    int ret = pread(cache_dev, buf, nbytes, offset);
+    _TimerLap(&tv_stop);
+
+    return ret;
+}
+
+static int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
+{
+    uint64_t offset = blkoff * BLKSIZE, 
+             nbytes = blkcnt * BLKSIZE;
+
+    #ifdef NO_REAL_DISK_IO
+        return nbytes;
+    #endif
+
+    _TimerLap(&tv_start);
+    int ret = pwrite(cache_dev, buf, nbytes, offset);
+    _TimerLap(&tv_stop);
+
+    return ret;
 }
 
 
@@ -347,11 +440,9 @@ push_freebuf(cache_page *page)
 **** ZBD Utilities *****
 *******************/
 
-static ssize_t zbd_partread_by_bitmap(struct zbc_device *dev, 
-            uint32_t zoneId, void *zonebuf, 
-            uint64_t from, uint64_t to, zBitmap *bitmap)
+static int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap)
 {
-    ssize_t ret = 0, cnt = 0;
+    int ret = 0, cnt = 0;
     void *buf;
     uint64_t zblkoff;
 
@@ -375,7 +466,7 @@ static ssize_t zbd_partread_by_bitmap(struct zbc_device *dev,
             zblkoff = (this_word * BITS_PER_LONG) + pos_from;
             buf = zonebuf + (zblkoff * BLKSIZE);
 
-            cnt = zbd_read_zblk(dev, buf, zoneId, zblkoff, pos_to - pos_from + 1);
+            cnt = zbd_read_zblk(zbd, buf, zoneId, zblkoff, pos_to - pos_from + 1);
             if(cnt < 0)
                 return cnt;
             
@@ -389,16 +480,36 @@ static ssize_t zbd_partread_by_bitmap(struct zbc_device *dev,
     return ret;
 }
 
-static ssize_t zbd_zone_partRMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk, void *zonebuf, zBitmap *bitmap)
+static int zbd_zone_partRMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)
 {
-    ssize_t ret;
-    /* Read blocks */
-    ret = zbd_partread_by_bitmap(dev, zoneId, zonebuf, from_blk, to_blk, bitmap);
+    int ret;
+    struct zbd_zone *tg_zone = zones_collection + zoneId;
+
+    /* Read blocks from ZBD refered to Bitmap*/
+    ret = zbd_partread_by_bitmap(zoneId, buf_rmw, from_blk, to_blk, tg_zone->bitmap);
+    if(ret < 0)
+        return ret;
     
-    /* Modify refered to Bitmap */
-    
+    /* Modify */
+    // load dirty pages from cache device
+    struct cache_page * page = tg_zone->pages_link;
+    for(; !page; page = page->next_page)
+    {
+        uint32_t bufoff = page->blkoff_inzone * BLKSIZE;
+        ret = pread_cache(buf_rmw + bufoff, page->pos, 1);
+        if(ret < 0)
+            return ret;
+    }
+
     /* Set target zone write pointer */
+    ret = zbd_set_wp(zbd, zoneId, from_blk);
+    if(ret < 0)
+        return ret;
  
     /* Write-Back */
+    ret = zbd_write_zone(zbd, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
+    if(ret < 0)
+        return ret;
 
+    return 0;
 }

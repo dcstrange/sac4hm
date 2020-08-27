@@ -13,7 +13,8 @@
 #define N_ZONESEC 524288
 #define N_ZONEBLK 65536
 
-
+#define N_ZONES 100
+#define N_SEQ_ZONES 90
 
 struct zbd_metadata
 {

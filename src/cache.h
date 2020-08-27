@@ -7,8 +7,8 @@
 
 
 enum page_status {
-    PAGE_CLEAN     = 0x00,
-    PAGE_DIRTY     = 0x01,
+    FOR_READ      = 0x01,
+    FOR_WRITE     = 0x02,
 };
 
 

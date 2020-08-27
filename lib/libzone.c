@@ -10,6 +10,42 @@
 
 #define nblk_to_nsec(x) (x << 3)
 
+/*
+ * Initialize the global zoned block device metadata.
+ */
+int zbd_init_metadata(struct zbc_device *dev, struct zbd_metadata **metadata)
+{
+    struct zbc_zone *zones_all, *zones_conv;
+    unsigned int nr_zones_all, nr_zones_conv, nr_zones_seq;
+
+    /* get all zones number */
+    int ret = zbc_list_zones(dev, 0, ZBC_RO_ALL, &zones_all, &nr_zones_all);
+    if( ret < 0 ){
+        return ret;
+    }
+    /* get conventional zones number*/
+    ret = zbc_list_zones(dev, 0, ZBC_RO_NOT_WP, &zones_conv, &nr_zones_conv);
+    if( ret < 0 ){
+        return ret;
+    }
+
+    nr_zones_seq = nr_zones_all - nr_zones_conv;
+
+
+    struct zbd_metadata * zmd = (struct zbd_metadata *) malloc(sizeof(struct zbd_metadata));
+    zmd->nr_zones_all = nr_zones_all;
+    zmd->nr_zones_conv = nr_zones_conv;
+    zmd->nr_zones_seq = nr_zones_seq;
+
+    *metadata = zmd;
+
+    free(zones_all);
+    free(zones_conv);
+
+    return 0;
+}
+
+
 int zbd_open(const char *filename, int flags, struct zbc_device **dev){
     int ret = zbc_open(filename, flags, dev);
     if(ret < 0){
@@ -38,7 +74,7 @@ ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf,
 }
 
 
-ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, bool force, 
+ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, int force, 
             uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
 {
     if(force){
@@ -55,6 +91,8 @@ ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, bool force,
             "[Err] on zbd_write_zone() zoneId=%u, inzone_offset=%lu count=%lu, return=%ld: %s\n", 
             zoneId, inzone_blkoff, blkcnt, ret, strerror(errno));
     }
+
+    zbc_close_zone(dev, sector_start, ZBC_OP_CLOSE_ZONE);
     return ret >> 3; 
 }
 

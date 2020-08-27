@@ -9,40 +9,7 @@
 #include "bits.h"
 #include "bitmap.h"
 
-/*
- * Initialize the global zoned block device metadata.
- */
-int zbd_init_metadata(struct zbc_device *dev, struct zbd_metadata **metadata)
-{
-    struct zbc_zone *zones_all, *zones_conv;
-    unsigned int nr_zones_all, nr_zones_conv, nr_zones_seq;
 
-    /* get all zones number */
-    int ret = zbc_list_zones(dev, 0, ZBC_RO_ALL, &zones_all, &nr_zones_all);
-    if( ret < 0 ){
-        return ret;
-    }
-    /* get conventional zones number*/
-    ret = zbc_list_zones(dev, 0, ZBC_RO_NOT_WP, &zones_conv, &nr_zones_conv);
-    if( ret < 0 ){
-        return ret;
-    }
-
-    nr_zones_seq = nr_zones_all - nr_zones_conv;
-
-
-    struct zbd_metadata * zmd = (struct zbd_metadata *) malloc(sizeof(struct zbd_metadata));
-    zmd->nr_zones_all = nr_zones_all;
-    zmd->nr_zones_conv = nr_zones_conv;
-    zmd->nr_zones_seq = nr_zones_seq;
-
-    *metadata = zmd;
-
-    free(zones_all);
-    free(zones_conv);
-
-    return 0;
-}
 
 /* Zone Bitmap Utilities */
 
@@ -92,7 +59,7 @@ inline void clean_Bitword(zBitmap *bitword)
     *bitword = 0UL;
 }        
 
-inline int check_Bitword_hasZero(zBitmap *bitword, long from, long to)
+inline int check_Bitword_hasZero(zBitmap *bitword, int from, int to)
 {
     if(to == -1)
         to = BITS_PER_LONG - 1;
@@ -103,4 +70,36 @@ inline int check_Bitword_hasZero(zBitmap *bitword, long from, long to)
         return 1;
     else
         return 0; 
+}
+
+inline void clean_Bitmap(zBitmap *bitmap, int from, int to)
+{
+    int ret = 0, cnt = 0;
+    void *buf;
+    uint64_t zblkoff;
+
+    uint64_t start_word = BIT_WORD(from), 
+               end_word = BIT_WORD(to);
+    uint64_t start_word_offset = BIT_WORD_OFFSET(from), 
+               end_word_offset = BIT_WORD_OFFSET(to);
+
+    uint64_t this_word = start_word, 
+             pos_from = start_word_offset, 
+             pos_to = BITS_PER_LONG - 1;
+
+    zBitmap *bitword;
+    while(this_word <= end_word){
+
+        if(this_word == end_word){ // end
+            pos_to = end_word_offset;
+        }
+        bitword = bitmap + this_word;
+        zBitmap cover = ~(GENMASK(to, from));
+        
+        *bitword &= cover;
+        
+        bitword ++;
+        this_word ++;
+        pos_from = 0;
+    }
 }
