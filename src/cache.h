@@ -20,10 +20,9 @@ enum enum_t_vict
 };
 
 extern void CacheLayer_Init();
-extern void read_block(uint64_t offset, char* ssd_buffer);
+extern int read_block(uint64_t blkoff, void *buf, int op);
 extern void write_block(uint64_t offset, char* ssd_buffer);
 extern void read_band(uint64_t offset, char* ssd_buffer);
 extern void write_band(uint64_t offset, char* ssd_buffer);
-extern void CopySSDBufTag(SSDBufTag* objectTag, SSDBufTag* sourceTag);
 
 #endif

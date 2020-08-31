@@ -9,7 +9,7 @@
 
 
 #include "timerUtils.h"
-#include "cache.h"
+#include "zbd-cache.h"
 #include "util/hashtable.h"
 #include "util/log.h"
 
@@ -21,16 +21,6 @@ extern struct hash_table;
 extern struct zbc_device;
 
 
-struct cache_page
-{
-    uint64_t   pos;                    // page postion in cache pages. 
-    uint64_t   tg_blk;                 // target block offset (by 4096B)
-    uint8_t    status;                 // 
-    struct cache_page *next_page;      
-    uint32_t belong_zoneId;
-    uint32_t blkoff_inzone;
-    // pthread_mutex_t lock;               // For the fine grain size
-};
 
 /* cache space runtime info. */
 struct cache_runtime       
@@ -43,19 +33,11 @@ struct cache_runtime
 
 struct cache_algorithm {
     int (*init)(int, int);
-    int (*hit)(int, int);
+    int (*hit)(int, int, int op);
     int (*login)(int, int);
     int (*logout)(int, int);
 };
 
-struct zbd_zone{
-    uint32_t zoneId;
-    int wtpr;                           // in-zone block offset of write pointer
-
-    int cached; 
-    zBitmap *bitmap;
-    void * private;                     // private used for algorithm. 
-};
 
 /* Global objects */
 struct zbc_device *zbd;
@@ -86,24 +68,25 @@ static void* buf_rmw; // private buffer used to RMW. Note that, this only for si
 
 static int init_cache_pages();
 static int init_StatisticObj();
-static void flushSSDBuffer(cache_page *page);
 
 // Utilities of cache pages
-static inline cache_page * pop_freebuf();
-static inline void push_freebuf(cache_page *page);
- // Utilities of ZBD
+static inline struct cache_page * pop_freebuf();
+static inline void push_freebuf(struct cache_page *page);
 
-static int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap);
+static inline int init_page(struct cache_page *page, uint64_t blkoff, int op); 
+static inline int try_recycle_page(struct cache_page *page);
+
+static inline struct cache_page * alloc_page_for(uint64_t blkoff, int op); // Entry Point
+
+// Utilities of ZBD (from libzone.h)
+
+// Utilitis of cache device. 
+static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt);
+static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt);
+
 
 
 static int initStrategySSDBuffer();
-// static long Strategy_Desp_LogOut();
-static int Strategy_Desp_HitIn(cache_page *desp);
-static int Strategy_Desp_LogIn(cache_page *desp);
-//#define isSamebuf(SSDBufTag tag1, SSDBufTag tag2) (tag1 == tag2)
-#define CopySSDBufTag(objectTag, sourceTag) (objectTag = sourceTag)
-#define IsDirty(flag) ((flag & PAGE_DIRTY) != 0)
-#define IsClean(flag) ((flag & PAGE_DIRTY) == 0)
 
 
 /* stopwatch */
@@ -173,10 +156,8 @@ init_cache_pages()
         zone->zoneId = i;
         zone->wtpr = N_ZONEBLK - 1;
 
-        zone->cached = 0;
-        zone->page_map = NULL;
         zone->bitmap = NULL;
-        zone->private = NULL;
+        zone->priv = NULL;
     }
 
     /* init buffer for RMW */
@@ -186,43 +167,49 @@ init_cache_pages()
     return 0;
 }
 
-static int
-init_StatisticObj()
-{
-    STT->hitnum_s = 0;
-    STT->hitnum_r = 0;
-    STT->hitnum_w = 0;
-    STT->load_ssd_blocks = 0;
-    STT->flush_ssd_blocks = 0;
-    STT->load_hdd_blocks = 0;
-    STT->flush_hdd_blocks = 0;
-    STT->flush_clean_blocks = 0;
+// static int
+// init_StatisticObj()
+// {
+//     STT->hitnum_s = 0;
+//     STT->hitnum_r = 0;
+//     STT->hitnum_w = 0;
+//     STT->load_ssd_blocks = 0;
+//     STT->flush_ssd_blocks = 0;
+//     STT->load_hdd_blocks = 0;
+//     STT->flush_hdd_blocks = 0;
+//     STT->flush_clean_blocks = 0;
 
-    STT->time_read_hdd = 0.0;
-    STT->time_write_hdd = 0.0;
-    STT->time_read_ssd = 0.0;
-    STT->time_write_ssd = 0.0;
-    STT->hashmiss_sum = 0;
-    STT->hashmiss_read = 0;
-    STT->hashmiss_write = 0;
+//     STT->time_read_hdd = 0.0;
+//     STT->time_write_hdd = 0.0;
+//     STT->time_read_ssd = 0.0;
+//     STT->time_write_ssd = 0.0;
+//     STT->hashmiss_sum = 0;
+//     STT->hashmiss_read = 0;
+//     STT->hashmiss_write = 0;
 
-    STT->wt_hit_rd = STT->rd_hit_wt = 0;
-    STT->incache_n_clean = STT->incache_n_dirty = 0;
-    return 0;
-}
+//     STT->wt_hit_rd = STT->rd_hit_wt = 0;
+//     STT->incache_n_clean = STT->incache_n_dirty = 0;
+//     return 0;
+// }
 
 static struct cache_page * 
-retrive_cache_page(uint64_t tg_blk)
+retrive_cache_page(uint64_t tg_blk, int op)
 {
     /* Lookup if already cached. */
     struct cache_page *page; 
-    uint64_t page_pos;
+    uint64_t tg_page;
 
     /* Cache miss */
-    if(HashTab_Lookup(hashtb_cblk, tg_blk, &page_pos) < 0) {return NULL;}
+    if(HashTab_Lookup(hashtb_cblk, tg_blk, &tg_page) < 0) {return NULL;}
 
     /* Cache hit */
-    page = cache_rt.pages + pos;
+    page = cache_rt.pages + tg_page;
+
+    /* metadata */
+    page->status |= op;
+    
+    /* algorithm */
+    algorithm.hit(page->belong_zoneId, page->blkoff_inzone, op);
     return page;
 }
 
@@ -239,151 +226,123 @@ flush_zone_pages()
     uint32_t zoneId = algorithm.logout(blk_from, blk_to);
 
     // do rmw
-    ret = zbd_zone_RMW(zoneId, blk_from, blk_to, buf_rmw, tg_zone->bitmap);
-    if(ret < 0)
+    ret = RMW(zoneId, blk_from, blk_to);  // *included clean metadata: page bitmap and hashtable.
+    if(ret < 0){
         log_err("RWM failed. \n");
-    
-    // process metadata
-    clean_Bitmap(tg_zone->bitmap, blk_from, blk_to);
-
-
-    while (1)
-    {
-        
+        exit(EXIT_FAILURE);
     }
-    
-    {
-        if(page->status & FOR_READ) {continue;}
-        
-
-    }
-    
-    
-
     
     return ret;
 }
 
 
-void read_block(off_t offset, char *ssd_buffer)
+static inline struct cache_page *
+alloc_page_for(uint64_t blkoff, int op)
 {
-
-    if (NO_CACHE)
+    struct cache_page *page = NULL;
+    while(1)
     {
-        if (EMULATION)
-            dev_simu_read(ssd_buffer, BLKSZ, offset);
-        else
-            dev_pread(smr_fd, ssd_buffer, BLKSZ, offset);
+        // alloc free cache page
+        page = pop_freebuf();
+        if(page) {break;}
 
-        msec_r_hdd = TimerInterval_MICRO(&tv_start, &tv_stop);
-        STT->time_read_hdd += Mirco2Sec(msec_r_hdd);
-        STT->load_hdd_blocks++;
-        return;
+        flush_zone_pages();
     }
 
-    // _TimerLap(&tv_cmstart);
-    int found = 0;
-    static SSDBufTag ssd_buf_tag;
-    static cache_page *page;
+/* metadata */ 
+    init_page(page, blkoff, op);
 
-    ssd_buf_tag.offset = offset;
-    if (DEBUG)
-        printf("[INFO] read():-------offset=%lu\n", offset);
+/* algorithm */    
+    algorithm.login(page->belong_zoneId, page->blkoff_inzone);
 
-    page = allocSSDBuf(ssd_buf_tag, &found, 0);
-
-    IsHit = found;
-    if (found)
-    {
-        dev_pread(cache_fd, ssd_buffer, BLKSZ, page->pos * BLKSZ);
-        msec_r_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
-
-        STT->hitnum_r++;
-        STT->time_read_ssd += Mirco2Sec(msec_r_ssd);
-        STT->load_ssd_blocks++;
-    }
-    else
-    {
-        if (EMULATION)
-            dev_simu_read(ssd_buffer, BLKSZ, offset);
-        else
-            dev_pread(smr_fd, ssd_buffer, BLKSZ, offset);
-
-        msec_r_hdd = TimerInterval_MICRO(&tv_start, &tv_stop);
-        STT->time_read_hdd += Mirco2Sec(msec_r_hdd);
-        STT->load_hdd_blocks++;
-        /* ----- Cost Model Reg------------- */
-        // if (isCallBack)
-        // {
-        //     CM_T_rand_Reg(msec_r_hdd);
-        // }
-        // _TimerLap(&tv_cmstop);
-        // microsecond_t miss_usetime = TimerInterval_MICRO(&tv_cmstart, &tv_cmstop);
-        // CM_T_hitmiss_Reg(miss_usetime);
-        /* ------------------ */
-
-        dev_pwrite(cache_fd, ssd_buffer, BLKSZ, page->pos * BLKSZ);
-        msec_w_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
-        STT->time_write_ssd += Mirco2Sec(msec_w_ssd);
-        STT->flush_ssd_blocks++;
-    }
-
+    return page; 
 }
 
-/*
- * write--return the buf_id of buffer according to buf_tag
- */
-void write_block(off_t offset, char *ssd_buffer)
-{
-    if (NO_CACHE)
-    {
-        if (EMULATION)
-            dev_simu_write(ssd_buffer, BLKSZ, offset);
-        else
-            dev_pwrite(smr_fd, ssd_buffer, BLKSZ, offset);
 
-        msec_w_hdd = TimerInterval_MICRO(&tv_start, &tv_stop);
-        STT->time_write_hdd += Mirco2Sec(msec_w_hdd);
-        STT->flush_hdd_blocks++;
-        return;
-    }
+int read_block(uint64_t blkoff, void *buf, int op)
+{
+    int ret;
 
     // _TimerLap(&tv_cmstart);
-    int found;
-    // int isCallBack;
-    static SSDBufTag ssd_buf_tag;
-    static cache_page *page;
+    static struct cache_page *page;
 
-    ssd_buf_tag.offset = offset;
-    page = allocSSDBuf(ssd_buf_tag, &found, 1);
+    page = retrive_cache_page(blkoff, op);
+    if(page) // cache hit
+    {
+        ret = pread_cache(buf, page->pos, 1);
+        return ret;
+    }
+    
+/* cache miss */ 
+    page = alloc_page_for(blkoff, op);
 
-    //if(!found && isCallBack)
-    // if (!found)
-    // {
-    //     /* ----- Cost Model Reg------------- */
-    //     // _TimerLap(&tv_cmstop);
-    //     // microsecond_t miss_usetime = TimerInterval_MICRO(&tv_cmstart, &tv_cmstop);
-    //     // CM_T_hitmiss_Reg(miss_usetime);
-    //     /* ------------------ */
-    // }
 
-    IsHit = found;
-    STT->hitnum_w += IsHit;
+/* handle data */
+    //read from zbd
+    ret = zbd_read_zblk(zbd, buf, page->belong_zoneId, page->blkoff_inzone, 1);
+    if(ret < 0) {log_err("read from zbd error. \n");}
 
-    dev_pwrite(cache_fd, ssd_buffer, BLKSZ, page->pos * BLKSZ);
-    msec_w_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
-    STT->time_write_ssd += Mirco2Sec(msec_w_ssd);
-    STT->flush_ssd_blocks++;
+    // write to cache
+    ret = pwrite_cache(buf, page->pos, 1);
+    if(ret < 0) {log_err("write cache error. \n");}
 
+    return ret;
+
+
+        // msec_r_hdd = TimerInterval_MICRO(&tv_start, &tv_stop);
+        // STT->time_read_hdd += Mirco2Sec(msec_r_hdd);
+        // STT->load_hdd_blocks++;
+
+        // dev_pwrite(cache_dev, ssd_buffer, BLKSZ, page->pos * BLKSZ);
+        // msec_w_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
+        // STT->time_write_ssd += Mirco2Sec(msec_w_ssd);
+        // STT->flush_ssd_blocks++;
+
+
+
+        // dev_pread(cache_fd, ssd_buffer, BLKSZ, page->pos * BLKSZ);
+        // msec_r_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
+
+        // STT->hitnum_r++;
+        // STT->time_read_ssd += Mirco2Sec(msec_r_ssd);
+        // STT->load_ssd_blocks++;
+    }
+
+
+
+
+int write_block(uint64_t blkoff, void *buf, int op)
+{
+   int ret;
+
+    // _TimerLap(&tv_cmstart);
+    static struct cache_page *page;
+
+    page = retrive_cache_page(blkoff, op);
+    if(page) // cache hit
+    {
+        ret = pwrite_cache(buf, page->pos, 1);
+        return ret;
+    }
+    
+/* cache miss */ 
+    page = alloc_page_for(blkoff, op);
+
+/* handle data */
+    // write to cache
+    ret = pwrite_cache(buf, page->pos, 1);
+    if(ret < 0) {log_err("write cache error. \n");}
+
+    return ret;
 }
 
 /******************
-**** Cache Utilities *****
+**** Cache Pages Utilities *****
 *******************/
 static inline struct cache_page *
 pop_freebuf()
 {
-    if (cache_rt.header_free_page < 0)
+    if (!cache_rt.header_free_page)
         return NULL;
     struct cache_page *page = cache_rt.header_free_page;
     cache_rt.header_free_page = page->next_page;
@@ -391,6 +350,7 @@ pop_freebuf()
     cache_rt.n_page_used ++;
     return page;
 }
+
 static inline void
 push_freebuf(struct cache_page *page)
 {
@@ -401,14 +361,63 @@ push_freebuf(struct cache_page *page)
 }
 
 
-static int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
+static inline int init_page(struct cache_page *page, uint64_t blkoff, int op)
 {
+    /* page metadata */
+    page->tg_blk = blkoff;
+    page->belong_zoneId = blkoff / N_ZONEBLK;
+    page->blkoff_inzone = blkoff % N_ZONEBLK;
+    page->status = op;
+
+    /* zone metadata */
+    struct zbd_zone *zone = zones_collection + page->belong_zoneId;
+    if(zone->cblks == 0){
+        zone->bitmap = create_Bitmap(&zone->bitmap, N_ZONEBLK);
+    }
+
+    zone->cblks ++;
+    set_Bit(zone->bitmap, page->blkoff_inzone);
+
+    /* hashtable */
+    HashTab_Insert(hashtb_cblk, blkoff, page->pos);
+
+    return 0;
+}
+
+
+static inline int try_recycle_page(struct cache_page *page) 
+{ 
+    if(page->status) {return 0;} // still for read or write
+    
+    /* zone metadata */
+    struct zbd_zone *zone = zones_collection + page->belong_zoneId;
+    zone->cblks --;
+    if(zone->cblks == 0){
+        free_Bitmap(zone->bitmap);
+    } else {
+        clean_Bit(zone->bitmap, page->blkoff_inzone);
+    }
+
+    // hashtable
+    HashTab_Delete(hashtb_cblk, page->tg_blk);
+
+    //recycle page
+    push_freebuf(page);
+    return 0;
+}
+
+/******************
+**** Cache Dev Utilities *****
+*******************/
+
+static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
+{
+    #ifdef NO_REAL_DISK_IO
+        return blkcnt;
+    #endif
+
     uint64_t offset = blkoff * BLKSIZE, 
              nbytes = blkcnt * BLKSIZE;
-
-    #ifdef NO_REAL_DISK_IO
-        return nbytes;
-    #endif
 
     
     _TimerLap(&tv_start);
@@ -418,7 +427,7 @@ static int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
     return ret;
 }
 
-static int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
+static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 {
     uint64_t offset = blkoff * BLKSIZE, 
              nbytes = blkcnt * BLKSIZE;
@@ -437,10 +446,10 @@ static int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 
 
 /******************
-**** ZBD Utilities *****
+**** RMW Utilities *****
 *******************/
 
-static int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap)
+static inline int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap)
 {
     int ret = 0, cnt = 0;
     void *buf;
@@ -480,7 +489,66 @@ static int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from
     return ret;
 }
 
-static int zbd_zone_partRMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)
+static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap){
+    int ret;
+    uint64_t tg_zone = zoneId * N_ZONEBLK;
+    struct zbd_zone * tg_zone_meta = zones_collection + zoneId;
+
+    uint64_t tg_blk;
+    uint64_t tg_page;
+    struct cache_page * page; 
+
+    uint64_t start_word = BIT_WORD(from), 
+               end_word = BIT_WORD(to);
+    uint64_t start_word_offset = BIT_WORD_OFFSET(from), 
+               end_word_offset = BIT_WORD_OFFSET(to);
+
+    uint64_t this_word = start_word, 
+             pos_from = start_word_offset, 
+             pos_to = BITS_PER_LONG - 1;
+    
+    uint64_t pos = from;
+
+
+    while(this_word <= end_word){
+
+        if(this_word == end_word){ // end word
+            pos_to = end_word_offset;
+        }
+
+        zBitmap * word = bitmap + this_word;
+        
+        /* check every bit. */
+        for(int i = pos_from; i <= pos_to; i++, pos ++){
+            if((*word & (1UL << i)) == 0){ continue; } // block not cached
+
+            // target is in cache. and load it from cache layer. 
+            tg_blk = tg_zone + pos;
+            ret = HashTab_Lookup(hashtb_cblk, tg_blk, &tg_page);
+            if(ret < 0){
+                log_err("inconsistent bitmap with hashtable.\n");
+                exit(EXIT_FAILURE);
+            }
+            uint32_t bufoff = pos * BLKSIZE;
+            ret = pread_cache(zonebuf + bufoff, tg_page, 1);
+            if(ret <= 0){
+                log_err("load block from cache failed, page[%d].\n", tg_page);
+                exit(-1);
+                }
+
+            /* clean page metadata: bitmap and hashtable. (just for demo) */
+            page = cache_rt.pages + tg_page;
+            page->status &= ~(FOR_WRITE);
+            try_recycle_page(page);
+        }
+        this_word ++;
+        pos_from = 0;
+    }
+
+
+}
+
+static int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)
 {
     int ret;
     struct zbd_zone *tg_zone = zones_collection + zoneId;
@@ -492,14 +560,7 @@ static int zbd_zone_partRMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)
     
     /* Modify */
     // load dirty pages from cache device
-    struct cache_page * page = tg_zone->pages_link;
-    for(; !page; page = page->next_page)
-    {
-        uint32_t bufoff = page->blkoff_inzone * BLKSIZE;
-        ret = pread_cache(buf_rmw + bufoff, page->pos, 1);
-        if(ret < 0)
-            return ret;
-    }
+    cache_partread_by_bitmap(zoneId, buf_rmw, from_blk, to_blk, tg_zone->bitmap);
 
     /* Set target zone write pointer */
     ret = zbd_set_wp(zbd, zoneId, from_blk);
@@ -508,6 +569,7 @@ static int zbd_zone_partRMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)
  
     /* Write-Back */
     ret = zbd_write_zone(zbd, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
+
     if(ret < 0)
         return ret;
 

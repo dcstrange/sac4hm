@@ -34,7 +34,7 @@ inline size_t create_Bitmap(zBitmap **bitmap, uint64_t length)
  */
 inline void free_Bitmap(zBitmap *bitmap)
 {
-    free(bitmap);
+    if(bitmap) {free(bitmap);}
 }
 
 inline void set_Bit(zBitmap *bitmap, uint64_t pos_bit)
