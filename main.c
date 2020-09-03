@@ -1,3 +1,5 @@
+#define _GNU_SOURCE
+
 #include <stdlib.h>
 #include <stdio.h> // struct FILE
 #include <string.h> // strerror()
@@ -7,75 +9,162 @@
 #include <libzbc/zbc.h>
 #include <stdint.h>
 
-
-#include "sac_log.h"
+#include "config.h"
 #include "libzone.h"
-
-
-#define SECSIZE 512
-#define BLKSIZE 4096
-#define N_BLKSEC 8
-#define ZONESIZE 268435456
-#define N_ZONESEC 524288
+#include "zbd-cache.h"
 
 #include "bits.h"
 #include "bitmap.h"
+#include "timerUtils.h"
+#include "log.h"
 
 char zbd_path[] = "/home/fei/devel/zbd/libzbc/zbd-emu-disk";
 
+/* test functinos */
 int sac_report_zone(struct zbc_device *dev, unsigned int from_zoneId);
 
 void test_bitmap();
 void test_readblk_bitmap();
+int test_zbd();
+
+#define ACT_READ 0x00
+#define ACT_WRITE 0x01
+void trace_to_iocall();
+static void reportSTT();
+static void reportSTT_brief();
+static void  resetSTT();
+
+/* -------------- */
+const char *tracefile[] = {
+    "./traces/src1_2.csv.req",
+    "./traces/wdev_0.csv.req",
+    "./traces/hm_0.csv.req",
+    "./traces/mds_0.csv.req",
+    "./traces/prn_0.csv.req",
+    "./traces/rsrch_0.csv.req",
+    "./traces/stg_0.csv.req",
+    "./traces/ts_0.csv.req",
+    "./traces/usr_0.csv.req",
+    "./traces/web_0.csv.req",
+   // "./traces/production-LiveMap-Backend-4K.req", // --> not in used.
+    "./traces/long.csv.req"                           // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
+};
+
 
 
 void main(){
 
-    test_readblk_bitmap();
-// /* Detect ZBD and get info*/
-//     struct zbc_device_info dev_info;
-//     int ret = zbc_device_is_zoned(zbd_path, true, &dev_info);
+    FILE *trace = fopen(tracefile[0],"rt");
+    CacheLayer_Init();
+    trace_to_iocall(trace);
+}
 
-//     if(ret == 1){
-//         printf("Zone Block Device %s:\n", zbd_path);
-//         zbc_print_device_info(&dev_info, stdout);
-//         DASHHH;
-//     } else if(ret == 0){
-//         printf("%s is not a zoned block device\n", zbd_path);
-//         return; 
-//     } else
-//     {
-//         fprintf(stderr, 
-//                 "The given device detect failed %s: %d, %s\n", 
-//                 zbd_path, ret, strerror(-ret));
-//         exit(EXIT_FAILURE);
-//     }
+void trace_to_iocall(FILE *trace)
+{
+    int ret;
 
-// /* Open ZBD */
-//     struct zbc_device *zbd;
-//     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-//     ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
+    char action;
+    uint64_t tg_blk;
+    char *data;
+    int isFullSSDcache = 0;
+    char pipebuf[128];
+    struct timeval tv_start, tv_stop;
+    double time = 0;
 
-//     if(ret < 0)
-//         exit(EXIT_FAILURE);
+    uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
+    uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-// /* Write zone */
-//     void *wbuf = malloc(ZONESIZE);
-//     memset(wbuf, '0', ZONESIZE);
+    uint64_t total_n_req = REPORT_INTERVAL * 500 * 3; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
-//     unsigned int target_zone = 10;
-//     ssize_t retcnt = zbd_write_zone(zbd, false, target_zone, 0, 100, wbuf);
-//     sac_report_zone(zbd, target_zone);
+    uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
-//     ret = zbd_set_wp(zbd, target_zone, 1000);
-//     sac_report_zone(zbd, target_zone);
 
-//     ret = zbd_set_wp(zbd, target_zone, 0);
-//     sac_report_zone(zbd, target_zone);
+    if(posix_memalign((void**)&data, BLKSIZE, ZONESIZE) < 0) {exit(-1);}
+    for (int i = 0; i < 16 * BLKSIZE; i++) {data[i] = '1';}
 
-// /* Close ZBD */
-//     free(wbuf);
-//     ret = zbc_close(zbd);
+
+    log_info_sac("[Cache warming...]\n");
+
+    int mask;
+    while (!feof(trace) && STT.reqcnt_s < total_n_req)
+    {
+
+        ret = fscanf(trace, "%d %d %lu\n", &action, &mask, &tg_blk);
+        if (ret < 0){
+            log_err_sac("error while reading trace file.");
+            break;
+        }
+
+        if (skiprows){ // should have used 'fseek()'
+            skiprows--;
+            continue;
+        }
+
+        tg_blk += STT.start_Blkoff;
+
+        if (!isFullSSDcache && STT.gc_cpages_s > 0)
+        {
+            log_info_sac("[Cache Space is Full]\n");
+            log_info_sac("[reset STT]\n");
+
+            reportSTT();
+            resetSTT(); // Reset the statistics of warming phrase, cuz we don't care.
+            isFullSSDcache = 1;
+        }
+
+                
+        if (action == ACT_READ && (STT.workload_mode & 0x01))
+        {   Lap(&tv_start);
+            ret = read_block(tg_blk, data);
+            Lap(&tv_stop);
+
+            if(ret < 0){
+                log_err_sac("read block error.\n");
+                return;
+            }
+            time = TimerInterval_seconds(&tv_start, &tv_stop); 
+            STT.time_req_r += time;
+            STT.time_req_s += time;
+
+            STT.reqcnt_r ++;
+            STT.reqcnt_s ++;
+        }
+        else if (action == ACT_WRITE && (STT.workload_mode & 0x02))
+        {
+            Lap(&tv_start);
+            ret = write_block(tg_blk, data);
+            Lap(&tv_stop);
+            if(ret < 0){
+                log_err_sac("write block error.\n");
+                return;
+            }
+
+            time = TimerInterval_seconds(&tv_start, &tv_stop); 
+            STT.time_req_w += time;
+            STT.time_req_s += time;
+
+            STT.reqcnt_w ++;
+            STT.reqcnt_s ++;
+        }
+        else
+        {
+            continue;
+        }
+
+        
+        if (STT.reqcnt_s % REPORT_INTERVAL_brief == 0){
+            reportSTT_brief();
+        } 
+
+        if (STT.reqcnt_s % REPORT_INTERVAL == 0){
+            reportSTT();
+        }
+    }
+
+    reportSTT();
+    log_info_sac("[Workload finished.]\n");
+
+    free(data);
 }
 
 int sac_report_zone(struct zbc_device *dev, unsigned int from_zoneId){
@@ -92,6 +181,114 @@ int sac_report_zone(struct zbc_device *dev, unsigned int from_zoneId){
     free(zones);
     return ret; 
 }
+
+static void reportSTT_brief()
+{
+    log_info_sac("[%12.1fs] reqs: %lu, hits: %lu, rmw: %lu, rmw time: %.0lf\n", 
+            STT.time_req_s, STT.reqcnt_s, STT.hitnum_s, STT.rmw_times, STT.time_zbd_rmw);
+}
+
+static void reportSTT()
+{
+    log_info_sac("=========================[Report]=========================\n");
+    /* 1. Workload */
+    log_info_sac("1. Workload\n");
+    log_info_sac("%12s\t%12s\t%12s\t%12s\n",
+                "", "SUM",    "READ",   "WRITE"
+        );
+
+    log_info_sac("%-12s\t%12lu\t%12lu\t%12lu\n", 
+                "reqs", STT.reqcnt_s,  STT.reqcnt_r, STT.reqcnt_w
+        );
+
+    log_info_sac("%-12s\t%12lu\t%12lu\t%12lu\n", 
+                "hit", STT.hitnum_s,  STT.hitnum_r, STT.hitnum_w
+        );
+
+    log_info_sac("%-12s\t%12lu\t%12lu\t%12lu\n", 
+                "miss", STT.missnum_s,  STT.missnum_r, STT.missnum_w
+        );
+
+
+    log_info_sac("%-12s\t%12.1lf\t%12.1lf\t%12.1lf\n", 
+            "time(s)", STT.time_req_s,  STT.time_req_w, STT.time_req_r
+        );
+
+    /* 2. Cache Device */
+    log_info_sac("\n2. Cache Device\n");
+
+    log_info_sac("%12s\t%12s\t%12s\t%12s\n",
+                "", "SUM",    "READ",   "WRITE"
+        );
+
+
+    log_info_sac("%-12s\t%12lu\t%12lu\t%12lu\n", 
+                "pages", STT.cpages_s,  STT.cpages_w, STT.cpages_r
+        );
+
+    log_info_sac("%-12s\t%12lu\t%12lu\t%12lu\n", 
+                "gc_cpages", STT.gc_cpages_s,  STT.gc_cpages_w, STT.gc_cpages_r
+        );
+
+    log_info_sac("%-12s\t%12.1lf\t%12.1lf\t%12.1lf\n", 
+                "time(s)", STT.time_cache_s,  STT.time_cache_r, STT.time_cache_w
+        );
+
+    /* 3. ZBD */
+    log_info_sac("\n3. ZBD\n");
+    log_info_sac("%12s\t%12s\n%12lu\t%12lu\n", 
+            "rmw_times",    "rmw_scope",
+            STT.rmw_times,  STT.rmw_scope
+        );
+
+    log_info_sac("%12s\t%12s\n%12.1lf\t%12.1lf\n", 
+            "time_zbd_read",    "time_zbd_rmw",
+            STT.time_zbd_read,  STT.time_zbd_rmw
+        );
+
+    log_info_sac("=========================[Report]=========================\n");
+
+}
+
+static void  resetSTT()
+{
+    /* 1. Workload */
+    STT.reqcnt_s = 0;
+    STT.reqcnt_r = 0;
+    STT.reqcnt_w = 0;
+
+    STT.hitnum_s = 0;
+    STT.hitnum_r = 0;
+    STT.hitnum_w = 0;
+
+    STT.missnum_s = 0;
+    STT.missnum_r = 0;
+    STT.missnum_w = 0;
+
+    STT.time_req_s = 0;
+    STT.time_req_r = 0;
+    STT.time_req_w = 0;
+
+    /* 2. Cache Device */
+    STT.cpages_s = 0;
+    STT.cpages_w = 0; 
+    STT.cpages_r = 0;
+
+    STT.gc_cpages_s = 0;
+    STT.gc_cpages_w = 0;
+    STT.gc_cpages_r = 0;
+
+    STT.time_cache_s = 0;
+    STT.time_cache_r = 0;
+    STT.time_cache_w = 0;
+
+    /* 3. ZBD */
+    STT.rmw_scope = 0;
+    STT.rmw_times = 0;
+
+    STT.time_zbd_read = 0;
+    STT.time_zbd_rmw = 0;
+};
 
 void print_bin(zBitmap word)
 {
@@ -119,7 +316,6 @@ void print_bitmap(zBitmap *bitmap, size_t nr_words)
     }
 }
 
-
 void test_bitmap(){
     printf("sizeof(unsigned long) = %d\n", sizeof(zBitmap));
     zBitmap* bm;
@@ -144,56 +340,104 @@ void test_bitmap(){
 }
 
 
-void test_readblk_bitmap()
-{
-    /* Open ZBD */
-    struct zbc_device *zbd;
-    //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-    int ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
-    if(ret < 0)
-        exit(EXIT_FAILURE);
+// void test_readblk_bitmap()
+// {
+//     /* Open ZBD */
+//     struct zbc_device *zbd;
+//     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+//     int ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
+//     if(ret < 0)
+//         exit(EXIT_FAILURE);
 
 
-    /* create a bitmap*/
+//     /* create a bitmap*/
 
-    char* buf = (char*) calloc(N_ZONEBLK, BLKSIZE);
-    int zoneId = 10;
-    uint64_t blkoff = 10 * BITS_PER_LONG;
-    uint64_t blkcnt = 10* BITS_PER_LONG;
-    zbd_set_wp(zbd, zoneId, N_ZONEBLK);
+//     char* buf = (char*) calloc(N_ZONEBLK, BLKSIZE);
+//     int zoneId = 10;
+//     uint64_t blkoff = 10 * BITS_PER_LONG;
+//     uint64_t blkcnt = 10* BITS_PER_LONG;
+//     zbd_set_wp(zbd, zoneId, N_ZONEBLK);
 
-    /* read zone blocks test */
-    printf("Read Zone %d with %d Blocks from offset...", zoneId, blkcnt, blkcnt);
-    ret = zbd_read_zblk(zbd, buf, zoneId, blkoff, blkcnt);
-    if(ret == blkcnt)
-        printf("[PASS]\n");
-    else
-        printf("[Fail: %d]\n", ret);
+//     /* read zone blocks test */
+//     printf("Read Zone %d with %d Blocks from offset...", zoneId, blkcnt, blkcnt);
+//     ret = zbd_read_zblk(zbd, buf, zoneId, blkoff, blkcnt);
+//     if(ret == blkcnt)
+//         printf("[PASS]\n");
+//     else
+//         printf("[Fail: %d]\n", ret);
     
 
 
-    /* read zone blocks refered to bitmap */
-    zBitmap* bm;
-    size_t nr_words = create_Bitmap(&bm, N_ZONEBLK);
+//     /* read zone blocks refered to bitmap */
+//     zBitmap* bm;
+//     size_t nr_words = create_Bitmap(&bm, N_ZONEBLK);
 
-    set_Bitword(bm+10);
-    set_Bitword(bm+11);
-    set_Bitword(bm+12);
-    set_Bitword(bm+13);
-    set_Bitword(bm+14);
-    set_Bitword(bm+15);
-    set_Bitword(bm+16);
-    set_Bitword(bm+17);
-    set_Bitword(bm+18);
+//     set_Bitword(bm+10);
+//     set_Bitword(bm+11);
+//     set_Bitword(bm+12);
+//     set_Bitword(bm+13);
+//     set_Bitword(bm+14);
+//     set_Bitword(bm+15);
+//     set_Bitword(bm+16);
+//     set_Bitword(bm+17);
+//     set_Bitword(bm+18);
 
-    clean_Bit(bm+16, 1);
-    print_bitmap(bm, 20);
+//     clean_Bit(bm+16, 1);
+//     print_bitmap(bm, 20);
 
-    uint64_t from = BITS_PER_LONG * 10,
-             to   = BITS_PER_LONG * 19 - 1 + 1;
-    ret = zbd_partread_by_bitmap(zbd, zoneId, buf, from, to, bm);
+//     uint64_t from = BITS_PER_LONG * 10,
+//              to   = BITS_PER_LONG * 19 - 1 + 1;
+//     ret = zbd_partread_by_bitmap(zbd, zoneId, buf, from, to, bm);
 
-    printf("Read Zone %d blocks from %lu, to %lu refered to bitmap...", zoneId, from, to);
-    printf("[%d]\n", ret);
+//     printf("Read Zone %d blocks from %lu, to %lu refered to bitmap...", zoneId, from, to);
+//     printf("[%d]\n", ret);
 
+// }
+
+int test_zbd()
+{
+/* Detect ZBD and get info*/
+    struct zbc_device_info dev_info;
+    int ret = zbc_device_is_zoned(zbd_path, true, &dev_info);
+
+    if(ret == 1){
+        printf("Zone Block Device %s:\n", zbd_path);
+        zbc_print_device_info(&dev_info, stdout);
+        DASHHH;
+    } else if(ret == 0){
+        printf("%s is not a zoned block device\n", zbd_path);
+        return ret; 
+    } else
+    {
+        fprintf(stderr, 
+                "The given device detect failed %s: %d, %s\n", 
+                zbd_path, ret, strerror(-ret));
+        exit(EXIT_FAILURE);
+    }
+
+/* Open ZBD */
+    struct zbc_device *zbd;
+    //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+    ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
+
+    if(ret < 0)
+        exit(EXIT_FAILURE);
+
+/* Write zone */
+    void *wbuf = malloc(ZONESIZE);
+    memset(wbuf, '0', ZONESIZE);
+
+    unsigned int target_zone = 10;
+    ssize_t retcnt = zbd_write_zone(zbd, wbuf, 0, target_zone, 0, 100);
+    sac_report_zone(zbd, target_zone);
+
+    ret = zbd_set_wp(zbd, target_zone, 1000);
+    sac_report_zone(zbd, target_zone);
+
+    ret = zbd_set_wp(zbd, target_zone, 0);
+    sac_report_zone(zbd, target_zone);
+
+/* Close ZBD */
+    free(wbuf);
+    ret = zbc_close(zbd);
 }

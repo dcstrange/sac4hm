@@ -5,48 +5,52 @@
 #include <string.h>
 
 #include <libzbc/zbc.h>
+#include "config.h"
 #include "zbc_private.h"
 #include "libzone.h"
+
+#define MULTIPLE_4K(x) !(x & 0x0fff)
 
 #define nblk_to_nsec(x) (x << 3)
 
 /*
  * Initialize the global zoned block device metadata.
  */
-int zbd_init_metadata(struct zbc_device *dev, struct zbd_metadata **metadata)
+// int zbd_init_metadata(struct zbc_device *dev, struct zbd_metadata **metadata)
+// {
+//     struct zbc_zone *zones_all, *zones_conv;
+//     unsigned int nr_zones_all, nr_zones_conv, nr_zones_seq;
+
+//     /* get all zones number */
+//     int ret = zbc_list_zones(dev, 0, ZBC_RO_ALL, &zones_all, &nr_zones_all);
+//     if( ret < 0 ){
+//         return ret;
+//     }
+//     /* get conventional zones number*/
+//     ret = zbc_list_zones(dev, 0, ZBC_RO_NOT_WP, &zones_conv, &nr_zones_conv);
+//     if( ret < 0 ){
+//         return ret;
+//     }
+
+//     nr_zones_seq = nr_zones_all - nr_zones_conv;
+
+
+//     struct zbd_metadata * zmd = (struct zbd_metadata *) malloc(sizeof(struct zbd_metadata));
+//     zmd->nr_zones_all = nr_zones_all;
+//     zmd->nr_zones_conv = nr_zones_conv;
+//     zmd->nr_zones_seq = nr_zones_seq;
+
+//     *metadata = zmd;
+
+//     free(zones_all);
+//     free(zones_conv);
+
+//     return 0;
+// }
+
+
+int zbd_open(const char *filename, int flags, struct zbc_device **dev)
 {
-    struct zbc_zone *zones_all, *zones_conv;
-    unsigned int nr_zones_all, nr_zones_conv, nr_zones_seq;
-
-    /* get all zones number */
-    int ret = zbc_list_zones(dev, 0, ZBC_RO_ALL, &zones_all, &nr_zones_all);
-    if( ret < 0 ){
-        return ret;
-    }
-    /* get conventional zones number*/
-    ret = zbc_list_zones(dev, 0, ZBC_RO_NOT_WP, &zones_conv, &nr_zones_conv);
-    if( ret < 0 ){
-        return ret;
-    }
-
-    nr_zones_seq = nr_zones_all - nr_zones_conv;
-
-
-    struct zbd_metadata * zmd = (struct zbd_metadata *) malloc(sizeof(struct zbd_metadata));
-    zmd->nr_zones_all = nr_zones_all;
-    zmd->nr_zones_conv = nr_zones_conv;
-    zmd->nr_zones_seq = nr_zones_seq;
-
-    *metadata = zmd;
-
-    free(zones_all);
-    free(zones_conv);
-
-    return 0;
-}
-
-
-int zbd_open(const char *filename, int flags, struct zbc_device **dev){
     int ret = zbc_open(filename, flags, dev);
     if(ret < 0){
         fprintf(stderr, 
@@ -57,8 +61,12 @@ int zbd_open(const char *filename, int flags, struct zbc_device **dev){
 }
  
 ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf, 
-                     uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
+             uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
 {
+    #ifdef NO_REAL_DISK_IO
+        return blkcnt;
+    #endif
+
     uint64_t offset = (zoneId * N_ZONESEC) + (inzone_blkoff * N_BLKSEC);
     uint64_t count = blkcnt * N_BLKSEC;
 
@@ -77,6 +85,10 @@ ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf,
 ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, int force, 
             uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
 {
+    #ifdef NO_REAL_DISK_IO
+        return blkcnt;
+    #endif
+
     if(force){
         // manually set write pointer. 
     }
@@ -100,24 +112,34 @@ ssize_t zbd_read_zone(struct zbc_device *dev,
             uint32_t zoneId, uint64_t zone_offset, size_t count, 
             void *buf)
 {
+    #ifdef NO_REAL_DISK_IO
+        return count;
+    #endif
+
     if(!MULTIPLE_4K(count)){
         fprintf(stderr, 
                 "[Err] Read bytes %ld not be multiples of 4096 (physical block size).\n",
                 count);
         return -ESPIPE; //illegal seek
     }
+
+    return zbc_pread(dev, buf, nblk_to_nsec(count), zone_offset);
 }
 
 
 int zbd_set_wp(struct zbc_device *dev, uint32_t zoneId, uint64_t inzone_blkoff) 
 {
+    #ifdef NO_REAL_DISK_IO
+        return 0;
+    #endif
+
 	struct zbc_device_info info;
 
 	zbc_get_device_info(dev, &info);
 	if (info.zbd_type != ZBC_DT_FAKE) {
 		fprintf(stderr,
 			"Device is not using the FAKE backend driver\n");
-        return 1;
+        return -1;
 	}
 
 	/* Set WP */

@@ -1,33 +1,49 @@
 CC = gcc
-CFLAGS = -g -W
+CFLAGS = -std=c99 -g -W 
 
-INCLUDE = ./include
-CFLAGS += -I$(INCLUDE)
+# OBJS
+INCLUDE_DIR = ./include
 
 LIB_DIR = ./lib
-LIBS = ${LIB_DIR}/libzone.o ${LIB_DIR}/bitmap.o
+OBJ_LIBS = ${LIB_DIR}/libzone.o 
 
+UTIL_DIR = ./util
+OBJ_UTILS =	${UTIL_DIR}/bitmap.o \
+			${UTIL_DIR}/hashtable.o \
+
+SRC_DIR = ./src
+OBJ_ALGORITHM = ${SRC_DIR}/zbd-cache.o
+
+STRATEGY_DIR = ./src/strategy
+OBJ_STRATEGIES = ${STRATEGY_DIR}/cars.o
+
+# DLL
 DLL = zbc
 
 
-default: build-libs test
+CFLAGS += -I$(INCLUDE_DIR) -I$(LIB_DIR) -I$(UTIL_DIR) -I$(SRC_DIR) -I$(STRATEGY_DIR)
+
+
+default: build-libs build-utils build-algorithm test
 
 test: 
-	$(CC) $(CFLAGS) -l$(DLL) $(LIBS) main.c -o test
+	$(CC) $(CFLAGS) -l$(DLL) $(OBJ_LIBS) $(OBJ_UTILS) $(OBJ_ALGORITHM) $(OBJ_STRATEGIES) main.c -o test
 
 build-libs:
 	$(CC) $(CFLAGS) -c ${LIB_DIR}/libzone.c -o ${LIB_DIR}/libzone.o
-	$(CC) $(CFLAGS) -c ${LIB_DIR}/bitmap.c -o ${LIB_DIR}/bitmap.o
 
+build-utils:
+	$(CC) $(CFLAGS) -c ${UTIL_DIR}/bitmap.c -o ${UTIL_DIR}/bitmap.o
+	$(CC) $(CFLAGS) -c ${UTIL_DIR}/hashtable.c -o ${UTIL_DIR}/hashtable.o
 
-libzone.o: 
-	$(CC) $(CFLAGS) -c ${LIB_DIR}/libzone.c -o ${LIB_DIR}/libzone.o
-
-
-
+build-algorithm:
+	$(CC) $(CFLAGS) -c ${SRC_DIR}/zbd-cache.c -o ${SRC_DIR}/zbd-cache.o
+	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/cars.c -o ${STRATEGY_DIR}/cars.o
+					
 
 clean: 
 	rm -f ./*.o
+
 	rm -f ${LIB_DIR}/*.o
 	rm -f ${UTIL_DIR}/*.o
 	rm -f ${ALGORITHM}/*.o

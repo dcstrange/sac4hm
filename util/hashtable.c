@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h> 
+#include "log.h"
 
 struct hash_bucket
 {
@@ -18,7 +19,7 @@ struct hashtable_header
 
 struct hash_table
 {
-    struct hast_bucket *free_buckets, 
+    struct hash_bucket *free_buckets, 
                        *buckets_collection; // for free.
     struct hashtable_header *headers;
 
@@ -49,8 +50,7 @@ int HashTab_crt(uint64_t max_items, struct hash_table **hashtb)
 
 
     if(ht->headers == NULL || ht->free_buckets == NULL){
-        HashTab_free(ht);
-        return -1;
+        log_err_sac("func: %s error. \n", __func__);
     }
 
     struct hash_bucket *bucket = ht->free_buckets;
@@ -166,7 +166,7 @@ int HashTab_free(struct hash_table *hashtb)
 
 static struct hash_bucket* allocbucket(struct hash_table *hashtb)
 {
-    struct hash_bucket* bucket = hashtb->free_buckets;
+    struct hash_bucket *bucket = hashtb->free_buckets;
     if(bucket == NULL)
         return NULL;
     
