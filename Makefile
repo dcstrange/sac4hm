@@ -29,4 +29,9 @@ libzone.o:
 clean: 
 	rm -f ./*.o
 	rm -f ${LIB_DIR}/*.o
+	rm -f ${UTIL_DIR}/*.o
+	rm -f ${ALGORITHM}/*.o
+	rm -f ${SRC_DIR}/*.o
+	rm -f ${STRATEGY_DIR}/*.o
+	
 	rm -f ./test
