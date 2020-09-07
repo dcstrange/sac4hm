@@ -23,11 +23,15 @@
 #endif
 
 #ifndef N_CACHE_PAGES
-#   define N_CACHE_PAGES 400000 // 1600mb
+#   define N_CACHE_PAGES 160000 // 1gb
 #endif
 
 
 #define NO_REAL_DISK_IO 
 
+#define DEBUG
+#ifdef DEBUG
+# define DEBUG_CARS
+#endif
 
 #endif

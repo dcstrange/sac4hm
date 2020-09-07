@@ -33,7 +33,7 @@ struct cache_algorithm {
     int (*login)(struct cache_page *page, int op);
     int (*logout)(struct cache_page *page, int op); 
     
-    int (*get_zone_to_evict)(int *zoneId, uint64_t *blk_from, uint64_t *blk_to);
+    int (*GC_privillege)();
 };
 
 
@@ -64,12 +64,10 @@ static inline struct cache_page * pop_freebuf();
 static inline void push_freebuf(struct cache_page *page);
 
 static inline int init_page(struct cache_page *page, uint64_t blkoff, int op); 
-static inline int try_recycle_page(struct cache_page *page);
+static inline int try_recycle_page(struct cache_page *page, int op);
 
 static inline struct cache_page * alloc_page_for(uint64_t blkoff, int op); // Entry Point
 
-// Utilities of ZBD
-static int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk);
 
 // Utilitis of cache device. 
 static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt);
@@ -79,7 +77,7 @@ static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt);
 struct RuntimeSTAT STT = 
 {
     .traceId = 0,
-    .workload_mode = 0x01 | 0x02,
+    .workload_mode = 0x02, //0x01 | 0x02,
     .start_Blkoff = N_ZONEBLK * (N_ZONES - N_SEQ_ZONES),
 
     /* 1. Workload */
@@ -140,7 +138,7 @@ void CacheLayer_Init()
     algorithm.login = cars_login;
     algorithm.logout = cars_logout;
     algorithm.hit = cars_hit;
-    algorithm.get_zone_to_evict = cars_get_zone_out;
+    algorithm.GC_privillege = cars_writeback_privi;
 
     int r_init_algorithm = algorithm.init();
 
@@ -207,6 +205,10 @@ retrive_cache_page(uint64_t tg_blk, int op)
     /* Cache hit */
     page = cache_rt.pages + tg_page;
 
+    /* STT */
+    if ((page->status & op) == 0){
+        op == FOR_READ ? STT.cpages_r ++ : STT.cpages_w ++;
+    }
     /* metadata */
     page->status |= op;
     
@@ -218,19 +220,8 @@ retrive_cache_page(uint64_t tg_blk, int op)
 static int 
 flush_zone_pages()
 {
-    int ret;
-    uint32_t zoneId;
-    uint64_t blk_from, blk_to;
-
     // call algorithm to decide which zone to be flush
-    zoneId = algorithm.get_zone_to_evict(&zoneId, &blk_from, &blk_to);
-
-    // do rmw
-    ret = RMW(zoneId, blk_from, blk_to);  // *included clean metadata: page bitmap and hashtable.
-    if(ret < 0){
-        log_err_sac("RWM failed. \n");
-        exit(EXIT_FAILURE);
-    }
+    int ret = algorithm.GC_privillege();
 
     return ret;
 }
@@ -254,6 +245,10 @@ alloc_page_for(uint64_t blkoff, int op)
 
 /* algorithm */    
     algorithm.login(page, op);
+
+/* STT */
+    STT.cpages_s ++ ;
+    op == FOR_READ ? STT.cpages_r ++ : STT.cpages_w ++;
 
     return page; 
 }
@@ -409,10 +404,31 @@ static inline int init_page(struct cache_page *page, uint64_t blkoff, int op)
 }
 
 
-static inline int try_recycle_page(struct cache_page *page) 
+static inline int try_recycle_page(struct cache_page *page, int op) 
 { 
-    if(page->status) {return 0;} // still for read or write
-    
+    int status = page->status;
+    if(!status) {
+        log_err_sac("[error] func:%s, can't double recycle page. \n", __func__);
+        return -1;
+    } 
+
+    page->status &=  (~op);
+    if(page->status) {   // still for read or write
+        return 0;
+    } 
+
+    /* STT */
+    if(status & FOR_READ){
+        STT.cpages_r --;
+        STT.gc_cpages_r ++ ;
+    } else if (status & FOR_WRITE) {
+        STT.cpages_w --;
+        STT.gc_cpages_w ++ ;
+    }
+    STT.cpages_s --;
+    STT.gc_cpages_s ++;
+
+
     /* zone metadata */
     struct zbd_zone *zone = zones_collection + page->belong_zoneId;
     zone->cblks --;
@@ -559,11 +575,10 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
                 log_err_sac("load block from cache failed, page[%d].\n", tg_page);
             }
 
-            /* clean page metadata: bitmap and hashtable. (just for demo) */
+            /* clean page metadata: bit, hashtable, page status, STT. (just for demo) */
             page = cache_rt.pages + tg_page;
-            page->status &= ~(FOR_WRITE);
             algorithm.logout(page, FOR_WRITE);
-            try_recycle_page(page); 
+            try_recycle_page(page, FOR_WRITE); 
         }
         this_word ++;
         pos_from = 0;
@@ -572,7 +587,7 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
 
 }
 
-static int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)
+int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g CARS) can use it. 
 {
     int ret;
     struct zbd_zone *tg_zone = zones_collection + zoneId;
@@ -604,4 +619,11 @@ static int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)
     STT.rmw_scope += ret;
 
     return ret;
+}
+
+int Page_force_drop(struct cache_page *page)
+{
+    int status = page->status;
+    algorithm.logout(page, status);
+    try_recycle_page(page, status); //GC hashtable, bit, STT
 }

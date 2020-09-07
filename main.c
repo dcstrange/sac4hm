@@ -102,6 +102,11 @@ void trace_to_iocall(FILE *trace)
 
         tg_blk += STT.start_Blkoff;
 
+        if((tg_blk / N_ZONEBLK) > N_ZONES){
+            log_info_sac("[warning] func:%s, target block overflow. \n", __func__);
+            continue;
+        }
+
         if (!isFullSSDcache && STT.gc_cpages_s > 0)
         {
             log_info_sac("[Cache Space is Full]\n");
@@ -211,7 +216,7 @@ static void reportSTT()
 
 
     log_info_sac("%-12s\t%12.1lf\t%12.1lf\t%12.1lf\n", 
-            "time(s)", STT.time_req_s,  STT.time_req_w, STT.time_req_r
+            "time(s)", STT.time_req_s,  STT.time_req_r, STT.time_req_w
         );
 
     /* 2. Cache Device */
@@ -223,11 +228,11 @@ static void reportSTT()
 
 
     log_info_sac("%-12s\t%12lu\t%12lu\t%12lu\n", 
-                "pages", STT.cpages_s,  STT.cpages_w, STT.cpages_r
+                "pages", STT.cpages_s,  STT.cpages_r, STT.cpages_w
         );
 
     log_info_sac("%-12s\t%12lu\t%12lu\t%12lu\n", 
-                "gc_cpages", STT.gc_cpages_s,  STT.gc_cpages_w, STT.gc_cpages_r
+                "gc_cpages", STT.gc_cpages_s,  STT.gc_cpages_r, STT.gc_cpages_w
         );
 
     log_info_sac("%-12s\t%12.1lf\t%12.1lf\t%12.1lf\n", 
@@ -269,25 +274,13 @@ static void  resetSTT()
     STT.time_req_r = 0;
     STT.time_req_w = 0;
 
-    /* 2. Cache Device */
-    STT.cpages_s = 0;
-    STT.cpages_w = 0; 
-    STT.cpages_r = 0;
-
-    STT.gc_cpages_s = 0;
-    STT.gc_cpages_w = 0;
-    STT.gc_cpages_r = 0;
 
     STT.time_cache_s = 0;
     STT.time_cache_r = 0;
     STT.time_cache_w = 0;
 
     /* 3. ZBD */
-    STT.rmw_scope = 0;
-    STT.rmw_times = 0;
-
     STT.time_zbd_read = 0;
-    STT.time_zbd_rmw = 0;
 };
 
 void print_bin(zBitmap word)

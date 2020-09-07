@@ -108,4 +108,9 @@ struct RuntimeSTAT{
 };
 
 extern struct RuntimeSTAT STT;
+
+/* Interface provided to Algorithms (eg. CARS) */
+extern int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk); 
+extern int Page_force_drop(struct cache_page *page);
+
 #endif
