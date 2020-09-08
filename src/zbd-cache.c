@@ -19,7 +19,7 @@
 #include "bits.h"
 #include "bitmap.h"
 
-#include "strategy/cars.h"
+#include "strategy/algorithms-general.h"
 
 struct hash_table; 
 struct zbc_device;
@@ -79,6 +79,9 @@ struct RuntimeSTAT STT =
     .traceId = 0,
     .workload_mode = 0x02, //0x01 | 0x02,
     .start_Blkoff = N_ZONEBLK * (N_ZONES - N_SEQ_ZONES),
+    .n_cache_pages = 8000000, //default 32GB
+    .op_algorithm = ALG_CARS,
+    .isPart = 1,
 
     /* 1. Workload */
     .reqcnt_s = 0,
@@ -132,13 +135,31 @@ microsecond_t msec_r_hdd, msec_w_hdd, msec_r_ssd, msec_w_ssd, msec_bw_hdd = 0;
 void CacheLayer_Init()
 {
     int r_init_cachepages = init_cache_pages();
-    int r_init_hashtb = HashTab_crt(N_CACHE_PAGES, &hashtb_cblk); 
+    int r_init_hashtb = HashTab_crt(STT.n_cache_pages, &hashtb_cblk); 
 
-    algorithm.init = cars_init;
-    algorithm.login = cars_login;
-    algorithm.logout = cars_logout;
-    algorithm.hit = cars_hit;
-    algorithm.GC_privillege = cars_writeback_privi;
+    switch (STT.op_algorithm)
+    {
+        case ALG_CARS:
+            algorithm.init = cars_init;
+            algorithm.login = cars_login;
+            algorithm.logout = cars_logout;
+            algorithm.hit = cars_hit;
+            algorithm.GC_privillege = cars_writeback_privi;
+            break;
+        case ALG_MOST:
+            algorithm.init = most_init;
+            algorithm.login = most_login;
+            algorithm.logout = most_logout;
+            algorithm.hit = most_hit;
+            algorithm.GC_privillege = most_writeback_privi;
+            break;
+        case ALG_UNKNOWN:
+            log_err_sac("[error]func:%s, unknown algorithm. \n");
+            exit(-1);
+        default:
+            break;
+    }
+
 
     int r_init_algorithm = algorithm.init();
 
@@ -155,13 +176,13 @@ init_cache_pages()
 {
     /* init cache pages metadata */
     cache_rt.pages = 
-    cache_rt.header_free_page = (struct cache_page *)malloc(sizeof(struct cache_page) * N_CACHE_PAGES);
+    cache_rt.header_free_page = (struct cache_page *)malloc(sizeof(struct cache_page) * STT.n_cache_pages);
     
     if(cache_rt.pages == NULL)
         return -1;
     
     struct cache_page *page = cache_rt.pages;
-    for (unsigned long i = 0; i < N_CACHE_PAGES; page++, i++)
+    for (unsigned long i = 0; i < STT.n_cache_pages; page++, i++)
     {
         page->pos = i;
         page->status = 0;

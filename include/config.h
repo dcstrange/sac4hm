@@ -13,19 +13,14 @@
 #endif
 
 #ifndef ZBD_SPEC
-#define ZBD_SPEC
-#   define ZONESIZE 268435456
+#define ZBD_SPEC5
+#   define ZONESIZE 26843546
 #   define N_ZONESEC 524288
 #   define N_ZONEBLK 65536
 
-#   define N_ZONES 100
-#   define N_SEQ_ZONES 90
+#   define N_ZONES 40000
+#   define N_SEQ_ZONES 40000
 #endif
-
-#ifndef N_CACHE_PAGES
-#   define N_CACHE_PAGES 160000 // 1gb
-#endif
-
 
 #define NO_REAL_DISK_IO 
 

@@ -3,9 +3,7 @@
 
 #include <stdint.h>
 #include "bitmap.h"
-#ifndef N_CACHE_PAGES
-#define N_CACHE_PAGES 8000000 // 32GB
-#endif
+
 
 
 enum page_status {
@@ -13,12 +11,11 @@ enum page_status {
     FOR_WRITE     = 0x02,
 };
 
-
-enum enum_t_vict
+enum algorthm_enum 
 {
-    ENUM_B_Clean,
-    ENUM_B_Dirty,
-    ENUM_B_Any
+    ALG_UNKNOWN = 0x00,
+    ALG_CARS    = 0x01,
+    ALG_MOST    = 0x02,
 };
 
 struct cache_page
@@ -63,7 +60,11 @@ struct RuntimeSTAT{
     /** This user basic info */
     int traceId;
     int workload_mode;
+    uint64_t n_cache_pages;
     uint64_t start_Blkoff;
+
+    int op_algorithm;
+    int isPart;
     /** Runtime strategy refered parameter **/
     //union StratetyUnion strategyRef;
 

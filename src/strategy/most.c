@@ -16,7 +16,7 @@ extern int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk);
 extern int Page_force_drop(struct cache_page *page);
 
 
-/* cars-specified objs */
+/* most-specified objs */
 struct page_payload{
     uint64_t stamp;
     struct cache_page *lru_w_pre, *lru_w_next;
@@ -24,16 +24,16 @@ struct page_payload{
     int status;
 };
 
-uint64_t stamp_global = 0;
-uint64_t window = 0;
-uint64_t stamp_ood; // = stamp_global - window;
+static uint64_t stamp_global = 0;
+static uint64_t window = 0;
+static uint64_t stamp_ood; // = stamp_global - window;
 
 // CARS对读/写数据分来管理：写数据按zone组织lru，读数据按全局组织lru
-struct cars_lru {
+struct most_lru {
     struct cache_page *head, *tail;
 };  // 该结构体用于 (struct zbd_zone *) zone 的 priv字段来表示写block的LRU链表；和用于全局读block的LRU链表。
 
-struct cars_lru LRU_r = {NULL, NULL}; // 全局读block的LRU链表
+static struct most_lru LRU_r = {NULL, NULL}; // 全局读block的LRU链表
 
 /* lru Utils */
 static inline void lru_insert(struct cache_page *page, int op);
@@ -42,9 +42,9 @@ static inline void lru_move(struct cache_page *page, int op);
 static inline void lru_top(struct cache_page *page, int op);
 
 /* cache out */
-static int cars_get_zone_out();
+static int most_get_zone_out();
 
-int cars_init()
+int most_init()
 {
     /* init page priv field. */
     struct cache_page *page = cache_rt.pages;
@@ -56,10 +56,11 @@ int cars_init()
     }
 
     window = STT.n_cache_pages;
+
     return 0;
 }
 
-int cars_login(struct cache_page *page, int op)
+int most_login(struct cache_page *page, int op)
 {   
     lru_insert(page, op);
 
@@ -70,14 +71,14 @@ int cars_login(struct cache_page *page, int op)
     return 0;
 }
 
-int cars_logout(struct cache_page *page, int op)
+int most_logout(struct cache_page *page, int op)
 {   
     lru_remove(page, op);
     
     return 0;
 }
 
-int cars_hit(struct cache_page *page, int op)
+int most_hit(struct cache_page *page, int op)
 {
     struct page_payload *payload = (struct page_payload *)page->priv;
 
@@ -94,7 +95,7 @@ int cars_hit(struct cache_page *page, int op)
     return 0;
 }
 
-int cars_writeback_privi()
+int most_writeback_privi()
 {
     stamp_ood = stamp_global - window; //stamp_global - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
 
@@ -122,15 +123,15 @@ int cars_writeback_privi()
     if(cnt == 128)
         return 0;
     
-    ret = cars_get_zone_out();
+    ret = most_get_zone_out();
     return ret;
 }
 
-static int cars_get_zone_out()
+static int most_get_zone_out()
 {
     int best_zoneId = -1;
     uint32_t from = 0, to = N_ZONEBLK - 1;
-    float best_arsc = 0;   // arsc = 1 / cars = ood_blks / rmw_length .   {0< arsc <= 1}
+    float best_arsc = 0;   // arsc = 1 / most = ood_blks / rmw_length .   {0< arsc <= 1}
     int blks_ars = 0;
     // Traverse every zone. 
     struct zbd_zone *zone = zones_collection;
@@ -139,7 +140,7 @@ static int cars_get_zone_out()
         uint32_t blkoff_min = N_ZONEBLK - 1;
         float zone_arsc;
 
-        struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;
+        struct most_lru * zone_lru = (struct most_lru *)zone->priv;
         if(zone_lru == NULL) {
             continue;
         }
@@ -151,21 +152,17 @@ static int cars_get_zone_out()
         while(page)
         {
             payload = (struct page_payload *)page->priv;
-            
-            if (payload->stamp < stamp_ood)
-            {
-                n_blks_ood ++;
-                blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
-            } 
-            else {
-                break;
-            }
+
+
+            n_blks_ood ++;
+            blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
 
             page = payload->lru_w_pre;
         }
+
         if(!STT.isPart) { blkoff_min = 0; }
 
-        zone_arsc = (float)n_blks_ood / (N_ZONEBLK - blkoff_min);
+        zone_arsc = (float)n_blks_ood;// / (N_ZONEBLK - blkoff_min);
         if(zone_arsc > best_arsc){
             best_zoneId = zone->zoneId;
             best_arsc = zone_arsc;
@@ -188,9 +185,9 @@ static inline void lru_insert(struct cache_page *page, int op)
 {
     struct zbd_zone *zone = zones_collection + page->belong_zoneId;
     if(zone->priv == NULL)
-        zone->priv = calloc(1, sizeof(struct cars_lru));
+        zone->priv = calloc(1, sizeof(struct most_lru));
 
-    struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;
+    struct most_lru * zone_lru = (struct most_lru *)zone->priv;
     struct page_payload *payload = (struct page_payload *)page->priv;
 
     #ifdef DEBUG_CARS // 用于调试zbd-cache.c代码的正确性
@@ -251,7 +248,7 @@ static inline void lru_remove(struct cache_page *page, int op)
     if ((op & FOR_WRITE) && (payload_this->status & FOR_WRITE)) {
 
         struct zbd_zone *zone = zones_collection + page->belong_zoneId;
-        struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;    
+        struct most_lru * zone_lru = (struct most_lru *)zone->priv;    
 
         if(payload_this->lru_w_pre)
         {

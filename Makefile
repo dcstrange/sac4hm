@@ -10,12 +10,14 @@ OBJ_LIBS = ${LIB_DIR}/libzone.o
 UTIL_DIR = ./util
 OBJ_UTILS =	${UTIL_DIR}/bitmap.o \
 			${UTIL_DIR}/hashtable.o \
+			${UTIL_DIR}/xstrtoumax.o
 
 SRC_DIR = ./src
 OBJ_ALGORITHM = ${SRC_DIR}/zbd-cache.o
 
 STRATEGY_DIR = ./src/strategy
-OBJ_STRATEGIES = ${STRATEGY_DIR}/cars.o
+OBJ_STRATEGIES = ${STRATEGY_DIR}/cars.o \
+				 ${STRATEGY_DIR}/most.o
 
 # DLL
 DLL = zbc
@@ -35,11 +37,12 @@ build-libs:
 build-utils:
 	$(CC) $(CFLAGS) -c ${UTIL_DIR}/bitmap.c -o ${UTIL_DIR}/bitmap.o
 	$(CC) $(CFLAGS) -c ${UTIL_DIR}/hashtable.c -o ${UTIL_DIR}/hashtable.o
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c ${UTIL_DIR}/xstrtoumax.c -o ${UTIL_DIR}/xstrtoumax.o
 
 build-algorithm:
 	$(CC) $(CFLAGS) -c ${SRC_DIR}/zbd-cache.c -o ${SRC_DIR}/zbd-cache.o
 	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/cars.c -o ${STRATEGY_DIR}/cars.o
-					
+	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/most.c -o ${STRATEGY_DIR}/most.o
 
 clean: 
 	rm -f ./*.o

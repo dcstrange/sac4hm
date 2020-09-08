@@ -8,11 +8,13 @@
 #include <fcntl.h>
 #include <libzbc/zbc.h>
 #include <stdint.h>
+#include <getopt.h>
 
 #include "config.h"
 #include "libzone.h"
 #include "zbd-cache.h"
 
+#include "xstrtol.h"
 #include "bits.h"
 #include "bitmap.h"
 #include "timerUtils.h"
@@ -50,11 +52,13 @@ const char *tracefile[] = {
     "./traces/long.csv.req"                           // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
 };
 
+int analyze_opts(int argc, char **argv);
+void main(int argc, char **argv){
 
+    analyze_opts(argc, argv);
 
-void main(){
+    FILE *trace = fopen(tracefile[10],"rt");
 
-    FILE *trace = fopen(tracefile[0],"rt");
     CacheLayer_Init();
     trace_to_iocall(trace);
 }
@@ -74,7 +78,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = REPORT_INTERVAL * 500 * 3; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 40000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
@@ -283,154 +287,312 @@ static void  resetSTT()
     STT.time_zbd_read = 0;
 };
 
-void print_bin(zBitmap word)
+static uintmax_t
+parse_integer (const char *str, int *invalid)
 {
-    size_t l = sizeof(zBitmap) * 8;
-    size_t i;
-    char* binchar = (char *)calloc(l+1, sizeof(char));
-    for(i = 0; i < l; i++){
-        binchar[i] = (word & (1UL << i)) == 0 ? '0' : '1';
-    }
-    binchar[l] = '\0';
-    printf("L-> %s ->H\n", binchar);
+  uintmax_t n;
+  char *suffix;
+  enum strtol_error e = xstrtoumax (str, &suffix, 10, &n, "bcEGkKMPTwYZ0");
 
-    free(binchar);
+  if (e == LONGINT_INVALID_SUFFIX_CHAR && *suffix == 'x')
+    {
+      uintmax_t multiplier = parse_integer (suffix + 1, invalid);
+
+      if (multiplier != 0 && n * multiplier / multiplier != n)
+	{
+	  *invalid = 1;
+	  return 0;
+	}
+
+      n *= multiplier;
+    }
+  else if (e != LONGINT_OK)
+    {
+      *invalid = 1;
+      return 0;
+    }
+
+  return n;
 }
 
-void print_bitmap(zBitmap *bitmap, size_t nr_words)
+int analyze_opts(int argc, char **argv)
 {
-    size_t i;
-    printf("Bitmap length=%d\n",nr_words);
-    printf("Bitmap: \n");
-    for(i = 0; i < nr_words; i ++){
-        printf("[bitword %lu]: ", i);
-        print_bin(bitmap[i]);
-        //printf("0x%lu\n", bitmap[i]);
+    static struct option long_options[] = {
+        {"cache-dev", required_argument, NULL, 'C'},  // FORCE
+        {"smr-dev", required_argument, NULL, 'S'},    // FORCE
+        {"workload-mode", required_argument, NULL, 'M'},
+        {"cache-size", required_argument, NULL, 'c'},
+        {"algorithm", required_argument, NULL, 'A'},
+        {"rmw-part", required_argument, NULL, 'P'},
+        {"help", no_argument, NULL, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    const char *optstr = "M:C:S:c:A:h";
+    int longIndex;
+
+    while (1)
+    {
+        int opt = getopt_long(argc, argv, optstr, long_options, &longIndex);
+        if (opt == -1)
+            break;
+        //printf("opt=%c,\nlongindex=%d,\nnext arg index: optind=%d,\noptarg=%s,\nopterr=%d,\noptopt=%c\n",
+        //opt, longIndex, optind, optarg, opterr, optopt);
+
+        uintmax_t n = 0;
+        int invalid = 0;
+        switch (opt)
+        {
+
+        case 'A': // algorithm
+            if (strcmp(optarg, "CARS") == 0)
+                STT.op_algorithm = ALG_CARS;
+            else if (strcmp(optarg, "MOST") == 0)
+                STT.op_algorithm = ALG_MOST;
+            else
+                STT.op_algorithm = ALG_UNKNOWN;
+
+	    printf("[User Setting] Cache Algorithm: %s.\n", optarg);
+            break;
+        
+        case 'P':
+            STT.isPart = atoi(optarg) ? 1 : 0;
+            break;
+
+        case 'M': // workload I/O mode
+            printf("[User Setting] Workload mode ");
+            if (strcmp(optarg, "r") == 0 || strcmp(optarg, "R") == 0)
+            {
+                STT.workload_mode = 0x01;
+                printf("[r]: read-only. \n");
+            }
+            else if (strcmp(optarg, "w") == 0 || strcmp(optarg, "W") == 0)
+            {
+                STT.workload_mode = 0x02;
+                printf("[w]: write-only\n");
+            }
+            else if (strcmp(optarg, "rw") == 0 || strcmp(optarg, "RW") == 0)
+            {
+                STT.workload_mode = 0x03;
+                printf("[rw]: read-write\n");
+            }
+            else{
+                printf("ERROR: unrecongnizd workload mode \"%s\", please assign mode [r]: read-only, [w]: write-only or [rw]: read-write.\n",
+                       optarg);
+                exit(-1);
+                }
+            break;
+
+        // case 'C': // cache-dev
+	    // printf("optarg 1 = %s\n",optarg);
+        //     cache_dev_path = optarg;
+
+        //     printf("[User Setting] Cache device file: %s\n\t(You can still use ramdisk or memory fs for testing.)\n", cache_dev_path);
+        //     break;
+
+        // case 'S': // SMR-dev
+        //     smr_dev_path = optarg;
+
+            // printf("[User Setting] SMR device file: %s\n\t(You can still use conventional hard drives for testing.)\n", optarg);
+            // break;
+        case 'c': // blkcnt of cache
+            n = parse_integer(optarg, &invalid);
+            if(invalid){
+                log_err_sac("invalid cache size number %s", optarg);
+                exit(-1);
+            }
+            STT.n_cache_pages = n / BLKSIZE;
+            printf("[User Setting] Cache Size = %s, pages = %lu.\n", optarg, STT.n_cache_pages);
+            break;
+
+        case 'h':
+            printf("\
+                    \n\
+                    Usage: sac [OPTIONS] [Arguments]\n\
+                    \n\
+                    The Options include: \n\
+                    \t--cache-dev		Device file path of the ssd/ramdisk for cache layer. \n\
+                    \t--smr-dev		Device file path of the SMR drive or HDD for SMR emulator. \n\
+                    \t--algorithm		One of [SAC], [LRU], [MOST], [MOST_CDC]. \n\
+                    \t--rmw-part        set if use Partitial RMW feature, default = 1. \n\
+                    \t--no-cache		No cache layer, i.e. SMR only. \n\
+                    \t--use-emulator	Use emulator. \n\
+                    \t--workload		Workload number for [1~11] corresponding to different trace files, in which the [11] is the big dataset. \n\
+                    \t--workload-file		Or you can specofy the trace file path manually. \n\
+                    \t--workload-mode		Three workload mode: [R]:read-only, [W]:write-only, [RW]:read-write	RW. \n\
+                    \t--cache-size		Cache size: [size]{+M,G}. E.g. 32G. \n\
+                    \t--offset		Start LBA offset of the SMR: [size]{+M,G}. E.g. 10G. \n\
+                    \t--requests		Requst number you want to run: [Nunmber]. \n\
+                    \t--help          show this menu. \n\
+                    ");
+            exit(EXIT_SUCCESS);
+
+        case '?':
+            printf("There is an unrecognized option or option without argument: %s\n", argv[optind - 1]);
+            exit(EXIT_FAILURE);
+            break;
+
+        default:
+            printf("There is an unrecognized option: %c\n", opt);
+            break;
+        }
     }
+
+    /* Default Setting. */
+
+    /* checking user option. */
+
+    return 0;
 }
 
-void test_bitmap(){
-    printf("sizeof(unsigned long) = %d\n", sizeof(zBitmap));
-    zBitmap* bm;
-    size_t nr_words = create_Bitmap(&bm, 256);
-    
-    print_bitmap(bm, nr_words);
-
-    set_Bitword(bm + 3);
-    clean_Bit(bm+3,1);
-    print_bitmap(bm, nr_words);
-
-    set_Bit(bm, 100);
-    clean_Bitword(bm+1);
-    print_bitmap(bm, nr_words);
-
-    set_Bitword(bm+0);
-    clean_Bit(bm+0,62);
-    long from = 0, to = -1;
-    if(check_Bitword_hasZero(bm+0, from, to))
-        printf("has zero from %ld to %ld\n", from, to);
-
-}
-
-
-// void test_readblk_bitmap()
+// void print_bin(zBitmap word)
 // {
-//     /* Open ZBD */
-//     struct zbc_device *zbd;
-//     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-//     int ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
-//     if(ret < 0)
-//         exit(EXIT_FAILURE);
+//     size_t l = sizeof(zBitmap) * 8;
+//     size_t i;
+//     char* binchar = (char *)calloc(l+1, sizeof(char));
+//     for(i = 0; i < l; i++){
+//         binchar[i] = (word & (1UL << i)) == 0 ? '0' : '1';
+//     }
+//     binchar[l] = '\0';
+//     printf("L-> %s ->H\n", binchar);
 
+//     free(binchar);
+// }
 
-//     /* create a bitmap*/
+// void print_bitmap(zBitmap *bitmap, size_t nr_words)
+// {
+//     size_t i;
+//     printf("Bitmap length=%d\n",nr_words);
+//     printf("Bitmap: \n");
+//     for(i = 0; i < nr_words; i ++){
+//         printf("[bitword %lu]: ", i);
+//         print_bin(bitmap[i]);
+//         //printf("0x%lu\n", bitmap[i]);
+//     }
+// }
 
-//     char* buf = (char*) calloc(N_ZONEBLK, BLKSIZE);
-//     int zoneId = 10;
-//     uint64_t blkoff = 10 * BITS_PER_LONG;
-//     uint64_t blkcnt = 10* BITS_PER_LONG;
-//     zbd_set_wp(zbd, zoneId, N_ZONEBLK);
-
-//     /* read zone blocks test */
-//     printf("Read Zone %d with %d Blocks from offset...", zoneId, blkcnt, blkcnt);
-//     ret = zbd_read_zblk(zbd, buf, zoneId, blkoff, blkcnt);
-//     if(ret == blkcnt)
-//         printf("[PASS]\n");
-//     else
-//         printf("[Fail: %d]\n", ret);
-    
-
-
-//     /* read zone blocks refered to bitmap */
+// void test_bitmap(){
+//     printf("sizeof(unsigned long) = %d\n", sizeof(zBitmap));
 //     zBitmap* bm;
-//     size_t nr_words = create_Bitmap(&bm, N_ZONEBLK);
+//     size_t nr_words = create_Bitmap(&bm, 256);
+    
+//     print_bitmap(bm, nr_words);
 
-//     set_Bitword(bm+10);
-//     set_Bitword(bm+11);
-//     set_Bitword(bm+12);
-//     set_Bitword(bm+13);
-//     set_Bitword(bm+14);
-//     set_Bitword(bm+15);
-//     set_Bitword(bm+16);
-//     set_Bitword(bm+17);
-//     set_Bitword(bm+18);
+//     set_Bitword(bm + 3);
+//     clean_Bit(bm+3,1);
+//     print_bitmap(bm, nr_words);
 
-//     clean_Bit(bm+16, 1);
-//     print_bitmap(bm, 20);
+//     set_Bit(bm, 100);
+//     clean_Bitword(bm+1);
+//     print_bitmap(bm, nr_words);
 
-//     uint64_t from = BITS_PER_LONG * 10,
-//              to   = BITS_PER_LONG * 19 - 1 + 1;
-//     ret = zbd_partread_by_bitmap(zbd, zoneId, buf, from, to, bm);
-
-//     printf("Read Zone %d blocks from %lu, to %lu refered to bitmap...", zoneId, from, to);
-//     printf("[%d]\n", ret);
+//     set_Bitword(bm+0);
+//     clean_Bit(bm+0,62);
+//     long from = 0, to = -1;
+//     if(check_Bitword_hasZero(bm+0, from, to))
+//         printf("has zero from %ld to %ld\n", from, to);
 
 // }
 
-int test_zbd()
-{
-/* Detect ZBD and get info*/
-    struct zbc_device_info dev_info;
-    int ret = zbc_device_is_zoned(zbd_path, true, &dev_info);
 
-    if(ret == 1){
-        printf("Zone Block Device %s:\n", zbd_path);
-        zbc_print_device_info(&dev_info, stdout);
-        DASHHH;
-    } else if(ret == 0){
-        printf("%s is not a zoned block device\n", zbd_path);
-        return ret; 
-    } else
-    {
-        fprintf(stderr, 
-                "The given device detect failed %s: %d, %s\n", 
-                zbd_path, ret, strerror(-ret));
-        exit(EXIT_FAILURE);
-    }
+// // void test_readblk_bitmap()
+// // {
+// //     /* Open ZBD */
+// //     struct zbc_device *zbd;
+// //     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+// //     int ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
+// //     if(ret < 0)
+// //         exit(EXIT_FAILURE);
 
-/* Open ZBD */
-    struct zbc_device *zbd;
-    //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-    ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
 
-    if(ret < 0)
-        exit(EXIT_FAILURE);
+// //     /* create a bitmap*/
 
-/* Write zone */
-    void *wbuf = malloc(ZONESIZE);
-    memset(wbuf, '0', ZONESIZE);
+// //     char* buf = (char*) calloc(N_ZONEBLK, BLKSIZE);
+// //     int zoneId = 10;
+// //     uint64_t blkoff = 10 * BITS_PER_LONG;
+// //     uint64_t blkcnt = 10* BITS_PER_LONG;
+// //     zbd_set_wp(zbd, zoneId, N_ZONEBLK);
 
-    unsigned int target_zone = 10;
-    ssize_t retcnt = zbd_write_zone(zbd, wbuf, 0, target_zone, 0, 100);
-    sac_report_zone(zbd, target_zone);
+// //     /* read zone blocks test */
+// //     printf("Read Zone %d with %d Blocks from offset...", zoneId, blkcnt, blkcnt);
+// //     ret = zbd_read_zblk(zbd, buf, zoneId, blkoff, blkcnt);
+// //     if(ret == blkcnt)
+// //         printf("[PASS]\n");
+// //     else
+// //         printf("[Fail: %d]\n", ret);
+    
 
-    ret = zbd_set_wp(zbd, target_zone, 1000);
-    sac_report_zone(zbd, target_zone);
 
-    ret = zbd_set_wp(zbd, target_zone, 0);
-    sac_report_zone(zbd, target_zone);
+// //     /* read zone blocks refered to bitmap */
+// //     zBitmap* bm;
+// //     size_t nr_words = create_Bitmap(&bm, N_ZONEBLK);
 
-/* Close ZBD */
-    free(wbuf);
-    ret = zbc_close(zbd);
-}
+// //     set_Bitword(bm+10);
+// //     set_Bitword(bm+11);
+// //     set_Bitword(bm+12);
+// //     set_Bitword(bm+13);
+// //     set_Bitword(bm+14);
+// //     set_Bitword(bm+15);
+// //     set_Bitword(bm+16);
+// //     set_Bitword(bm+17);
+// //     set_Bitword(bm+18);
+
+// //     clean_Bit(bm+16, 1);
+// //     print_bitmap(bm, 20);
+
+// //     uint64_t from = BITS_PER_LONG * 10,
+// //              to   = BITS_PER_LONG * 19 - 1 + 1;
+// //     ret = zbd_partread_by_bitmap(zbd, zoneId, buf, from, to, bm);
+
+// //     printf("Read Zone %d blocks from %lu, to %lu refered to bitmap...", zoneId, from, to);
+// //     printf("[%d]\n", ret);
+
+// // }
+
+// int test_zbd()
+// {
+// /* Detect ZBD and get info*/
+//     struct zbc_device_info dev_info;
+//     int ret = zbc_device_is_zoned(zbd_path, true, &dev_info);
+
+//     if(ret == 1){
+//         printf("Zone Block Device %s:\n", zbd_path);
+//         zbc_print_device_info(&dev_info, stdout);
+//         DASHHH;
+//     } else if(ret == 0){
+//         printf("%s is not a zoned block device\n", zbd_path);
+//         return ret; 
+//     } else
+//     {
+//         fprintf(stderr, 
+//                 "The given device detect failed %s: %d, %s\n", 
+//                 zbd_path, ret, strerror(-ret));
+//         exit(EXIT_FAILURE);
+//     }
+
+// /* Open ZBD */
+//     struct zbc_device *zbd;
+//     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+//     ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &zbd);
+
+//     if(ret < 0)
+//         exit(EXIT_FAILURE);
+
+// /* Write zone */
+//     void *wbuf = malloc(ZONESIZE);
+//     memset(wbuf, '0', ZONESIZE);
+
+//     unsigned int target_zone = 10;
+//     ssize_t retcnt = zbd_write_zone(zbd, wbuf, 0, target_zone, 0, 100);
+//     sac_report_zone(zbd, target_zone);
+
+//     ret = zbd_set_wp(zbd, target_zone, 1000);
+//     sac_report_zone(zbd, target_zone);
+
+//     ret = zbd_set_wp(zbd, target_zone, 0);
+//     sac_report_zone(zbd, target_zone);
+
+// /* Close ZBD */
+//     free(wbuf);
+//     ret = zbc_close(zbd);
+// }
