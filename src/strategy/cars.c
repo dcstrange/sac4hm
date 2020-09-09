@@ -24,9 +24,9 @@ struct page_payload{
     int status;
 };
 
-uint64_t stamp_global = 0;
+uint64_t Stamp_GLOBAL = 0;
 uint64_t window = 0;
-uint64_t stamp_ood; // = stamp_global - window;
+uint64_t Stamp_OOD; // = Stamp_GLOBAL - window;
 
 // CARS对读/写数据分来管理：写数据按zone组织lru，读数据按全局组织lru
 struct cars_lru {
@@ -65,8 +65,8 @@ int cars_login(struct cache_page *page, int op)
 
     struct page_payload *payload = (struct page_payload *)page->priv;
 
-    payload->stamp = stamp_global;
-    stamp_global ++;
+    payload->stamp = Stamp_GLOBAL;
+    Stamp_GLOBAL ++;
     return 0;
 }
 
@@ -88,24 +88,26 @@ int cars_hit(struct cache_page *page, int op)
     }
     
 
-    payload->stamp = stamp_global;
+    payload->stamp = Stamp_GLOBAL;
 
-    stamp_global ++; 
+    Stamp_GLOBAL ++; 
     return 0;
 }
 
 int cars_writeback_privi()
 {
-    stamp_ood = stamp_global - window; //stamp_global - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
-
+    Stamp_OOD = Stamp_GLOBAL - window; //Stamp_GLOBAL - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
     int ret, cnt = 0;
-    struct cache_page *page = LRU_r.tail;
+    struct cache_page *page;
     struct cache_page *next_page = NULL;
     struct page_payload *payload;
-    while (page && cnt < 128)
+
+EVICT_READ_BLKS:
+    page = LRU_r.tail;
+    while (page && cnt < 1024)
     {
         payload = (struct page_payload *)page->priv;
-        if(payload->stamp > stamp_ood){
+        if(payload->stamp > Stamp_OOD){
             break;
         }
 
@@ -118,25 +120,54 @@ int cars_writeback_privi()
         }
         page = next_page;
     }
-
-    if(cnt == 128)
-        return 0;
     
-    ret = cars_get_zone_out();
-    return ret;
+    if(cnt)
+        return cnt;
+
+    // 如果没有ARS read blks，则淘汰ARS write blks
+    int zoneId;
+    uint32_t zblk_from, zblk_to, zblks_ars;
+    ret = cars_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
+
+    if(ret >= 0)
+    { goto EVICT_ZONE; }
+
+    // 如果 read blocks和 write blocks都没有ARS，那么采用代价打分。
+    Stamp_OOD = Stamp_GLOBAL; // 设置ood时间戳，采用most-part方式选择zone
+    ret = cars_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
+    if(STT.cpages_r == 0)
+    { goto EVICT_ZONE;}
+
+    float cost_per_w = 100 * 2* (zblk_to - zblk_from + 1) / zblks_ars;
+    float cost_per_r = 14000;
+
+    if(cost_per_r > cost_per_w)
+    { 
+        goto EVICT_ZONE; 
+    } 
+    else 
+    {
+        Stamp_OOD = Stamp_GLOBAL; 
+        goto EVICT_READ_BLKS;
+    }
+
+EVICT_ZONE:
+        return RMW(zoneId, zblk_from, zblk_to);
 }
 
-static int cars_get_zone_out()
+static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to, uint32_t *zblks_ars)
 {
     int best_zoneId = -1;
     uint32_t from = 0, to = N_ZONEBLK - 1;
     float best_arsc = 0;   // arsc = 1 / cars = ood_blks / rmw_length .   {0< arsc <= 1}
-    int blks_ars = 0;
+    uint32_t blks_ars = 0;
+
     // Traverse every zone. 
     struct zbd_zone *zone = zones_collection;
     for(int i = 0; i < N_ZONES; i++, zone++)
     {
         uint32_t blkoff_min = N_ZONEBLK - 1;
+        uint32_t blkoff_min_most = N_ZONEBLK - 1;
         float zone_arsc;
 
         struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;
@@ -145,14 +176,14 @@ static int cars_get_zone_out()
         }
 
         // Traverse every page in zone. 获取zone内最小blkoff的ARS block
-        int n_blks_ood = 0;
+        uint32_t n_blks_ood = 0;
         struct cache_page *page = zone_lru->tail;
         struct page_payload *payload;
         while(page)
         {
             payload = (struct page_payload *)page->priv;
             
-            if (payload->stamp < stamp_ood)
+            if (payload->stamp <= Stamp_OOD)
             {
                 n_blks_ood ++;
                 blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
@@ -174,7 +205,10 @@ static int cars_get_zone_out()
         }
     }
 
-    RMW(best_zoneId, from, to);
+    *zoneId = best_zoneId;
+    *zblk_from = from;
+    *zblk_to = to;
+    *zblks_ars = blks_ars;
 
     return best_zoneId;
 }

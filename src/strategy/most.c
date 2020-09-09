@@ -24,9 +24,9 @@ struct page_payload{
     int status;
 };
 
-static uint64_t stamp_global = 0;
+static uint64_t Stamp_GLOBAL = 0;
 static uint64_t window = 0;
-static uint64_t stamp_ood; // = stamp_global - window;
+static uint64_t Stamp_OOD; // = Stamp_GLOBAL - window;
 
 // CARS对读/写数据分来管理：写数据按zone组织lru，读数据按全局组织lru
 struct most_lru {
@@ -66,8 +66,8 @@ int most_login(struct cache_page *page, int op)
 
     struct page_payload *payload = (struct page_payload *)page->priv;
 
-    payload->stamp = stamp_global;
-    stamp_global ++;
+    payload->stamp = Stamp_GLOBAL;
+    Stamp_GLOBAL ++;
     return 0;
 }
 
@@ -89,15 +89,15 @@ int most_hit(struct cache_page *page, int op)
     }
     
 
-    payload->stamp = stamp_global;
+    payload->stamp = Stamp_GLOBAL;
 
-    stamp_global ++; 
+    Stamp_GLOBAL ++; 
     return 0;
 }
 
 int most_writeback_privi()
 {
-    stamp_ood = stamp_global - window; //stamp_global - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
+    Stamp_OOD = Stamp_GLOBAL - window; //Stamp_GLOBAL - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
 
     int ret, cnt = 0;
     struct cache_page *page = LRU_r.tail;
@@ -106,7 +106,7 @@ int most_writeback_privi()
     while (page && cnt < 128)
     {
         payload = (struct page_payload *)page->priv;
-        if(payload->stamp > stamp_ood){
+        if(payload->stamp > Stamp_OOD){
             break;
         }
 
