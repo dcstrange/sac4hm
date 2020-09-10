@@ -105,7 +105,7 @@ struct RuntimeSTAT{
     double time_zbd_read;
     double time_zbd_rmw;
 
-
+    void *debug;
 };
 
 extern struct RuntimeSTAT STT;

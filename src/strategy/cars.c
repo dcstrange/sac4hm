@@ -24,9 +24,9 @@ struct page_payload{
     int status;
 };
 
-uint64_t Stamp_GLOBAL = 0;
-uint64_t window = 0;
-uint64_t Stamp_OOD; // = Stamp_GLOBAL - window;
+static uint64_t Stamp_GLOBAL = 0;
+static uint64_t window = 0;
+static uint64_t Stamp_OOD; // = Stamp_GLOBAL - window;
 
 // CARS对读/写数据分来管理：写数据按zone组织lru，读数据按全局组织lru
 struct cars_lru {
@@ -96,7 +96,8 @@ int cars_hit(struct cache_page *page, int op)
 
 int cars_writeback_privi()
 {
-    Stamp_OOD = Stamp_GLOBAL - window; //Stamp_GLOBAL - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
+   // Stamp_OOD = Stamp_GLOBAL - window; // // 不是好的方法。是没有依据的人工参数。
+    Stamp_OOD = Stamp_GLOBAL - STT.hitnum_s;
     int ret, cnt = 0;
     struct cache_page *page;
     struct cache_page *next_page = NULL;
@@ -159,7 +160,7 @@ static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to
 {
     int best_zoneId = -1;
     uint32_t from = 0, to = N_ZONEBLK - 1;
-    float best_arsc = 0;   // arsc = 1 / cars = ood_blks / rmw_length .   {0< arsc <= 1}
+    float best_arsc = 0;   // arsc = 1/cars = ood_blks/rmw_length .   {0< arsc <= 1}
     uint32_t blks_ars = 0;
 
     // Traverse every zone. 

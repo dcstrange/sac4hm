@@ -119,6 +119,8 @@ struct RuntimeSTAT STT =
 
     .time_zbd_read = 0,
     .time_zbd_rmw = 0,
+
+    .debug = NULL,
 };
 
 
@@ -419,14 +421,19 @@ static inline int init_page(struct cache_page *page, uint64_t blkoff, int op)
     set_Bit(zone->bitmap, page->blkoff_inzone);
 
     /* hashtable */
-    HashTab_Insert(hashtb_cblk, blkoff, page->pos);
-
+    int ret = HashTab_Insert(hashtb_cblk, blkoff, page->pos);
+    if(ret < 0)
+    {
+        log_err_sac("[error]func:%s, Hashtable insert error.\n", __func__);
+        exit(-1);
+    }
     return 0;
 }
 
 
 static inline int try_recycle_page(struct cache_page *page, int op) 
 { 
+
     int status = page->status;
     if(!status) {
         log_err_sac("[error] func:%s, can't double recycle page. \n", __func__);
@@ -455,6 +462,7 @@ static inline int try_recycle_page(struct cache_page *page, int op)
     zone->cblks --;
     if(zone->cblks == 0){
         free_Bitmap(zone->bitmap);
+        zone->bitmap = NULL;
     } else {
         clean_Bit(zone->bitmap, page->blkoff_inzone);
     }
@@ -600,11 +608,13 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
             page = cache_rt.pages + tg_page;
             algorithm.logout(page, FOR_WRITE);
             try_recycle_page(page, FOR_WRITE); 
+            if(tg_zone_meta->cblks == 0)
+                return 0;
         }
         this_word ++;
         pos_from = 0;
     }
-
+    return 0;
 
 }
 

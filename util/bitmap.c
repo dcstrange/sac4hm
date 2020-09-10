@@ -39,6 +39,7 @@ inline void free_Bitmap(zBitmap *bitmap)
 
 inline void set_Bit(zBitmap *bitmap, uint64_t pos_bit)
 {
+
     zBitmap *bitword = bitmap +  BIT_WORD(pos_bit);
     *bitword |= BIT_MASK(pos_bit);
 }
