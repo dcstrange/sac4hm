@@ -96,8 +96,8 @@ int cars_hit(struct cache_page *page, int op)
 
 int cars_writeback_privi()
 {
-   // Stamp_OOD = Stamp_GLOBAL - window; // // 不是好的方法。是没有依据的人工参数。
-    Stamp_OOD = Stamp_GLOBAL - STT.hitnum_s;
+    Stamp_OOD = Stamp_GLOBAL - window; // // 不是好的方法。是没有依据的人工参数。
+    //Stamp_OOD = Stamp_GLOBAL - STT.hitnum_s;
     int ret, cnt = 0;
     struct cache_page *page;
     struct cache_page *next_page = NULL;
