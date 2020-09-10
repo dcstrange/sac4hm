@@ -22,7 +22,7 @@ That will generatet the executable file `test` at the root dir.
 
 ## Test
 
-one line tests: 
+### one line tests: 
 ```
 ./test --algorithm CARS  --cache-size 16G 
 ```
@@ -32,3 +32,15 @@ one line tests:
 ```
 ./test --algorithm CARS  --cache-size 16G --rmw-part 0
 ```
+```
+./test --algorithm CARS  --cache-size 16G --rmw-part 0 --workload-mode rw
+```
+
+### Args
+`--cache-size`      Cache device size used. 
+
+`--rmw-part`        If use RMW with Partitial feature, default 1
+
+`--algorithm`       Algorithm for deciding which the zone to evict, default CARS.
+
+`--workload-mode`   [r] read-only,[w] write-only,[rw] read-write, default [w].
