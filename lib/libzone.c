@@ -129,9 +129,9 @@ ssize_t zbd_read_zone(struct zbc_device *dev,
 
 int zbd_set_wp(struct zbc_device *dev, uint64_t zoneId, uint64_t inzone_blkoff) 
 {
-    // #ifdef NO_REAL_DISK_IO
-    //     return 0;
-    // #endif
+    #ifdef NO_REAL_DISK_IO
+         return 0;
+    #endif
     int ret;
 	struct zbc_device_info info;
 

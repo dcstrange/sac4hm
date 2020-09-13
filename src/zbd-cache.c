@@ -620,18 +620,25 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
 
 int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g CARS) can use it. 
 {
+    log_info_sac("[%s] start r-m-w zone [%d] ... ", __func__, zoneId);
+
     int ret;
     struct zbd_zone *tg_zone = zones_collection + zoneId;
 
     /* Read blocks from ZBD refered to Bitmap*/
     ret = zbd_partread_by_bitmap(zoneId, buf_rmw, from_blk, to_blk, tg_zone->bitmap);
-    if(ret < 0)
-        return ret;
+    if(ret < 0){
+        log_err_sac("[%s] Fail to read zone [%d] by Bitmap. \n", __func__, zoneId);
+        exit(-1);
+    }
     
     /* Modify */
     // load dirty pages from cache device
-    cache_partread_by_bitmap(zoneId, buf_rmw, from_blk, to_blk, tg_zone->bitmap);
-
+    ret = cache_partread_by_bitmap(zoneId, buf_rmw, from_blk, to_blk, tg_zone->bitmap);
+    if(ret < 0){
+        log_err_sac("[%s] Fail to read cache by Bitmap. \n", __func__ );
+        exit(-1);
+    }
 
     /* Set target zone write pointer */
     ret = zbd_set_wp(STT.ZBD, zoneId, from_blk);
@@ -639,18 +646,21 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
         log_err_sac("[%s] Fail to Set Zone[%d] 's WP to [%lu]. \n", __func__, zoneId, from_blk);
         exit(-1);
     }
-    log_info_sac("[RMW] Set Zone[%d] 's WP to [%lu]. \n", zoneId, from_blk);
 
     /* Write-Back */
     ret = zbd_write_zone(STT.ZBD, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
 
-    if(ret < 0)
-        return ret;
+    if(ret < 0){
+        log_err_sac("[%s] Fail to Write Zone [%d]. \n", __func__, zoneId);
+        exit(-1);
+    }
+
     
     STT.rmw_times ++;
     STT.time_zbd_rmw ++;
     STT.rmw_scope += ret;
 
+    log_info_sac("finish.\n");
     return ret;
 }
 
