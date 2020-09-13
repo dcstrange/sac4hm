@@ -19,6 +19,9 @@ STRATEGY_DIR = ./src/strategy
 OBJ_STRATEGIES = ${STRATEGY_DIR}/cars.o \
 				 ${STRATEGY_DIR}/most.o
 
+TOOLS_DIR = ./tools
+OBJ_TOOLS = ${TOOLS_DIR}/zbd_set_full
+
 # DLL
 DLL = zbc
 
@@ -26,7 +29,7 @@ DLL = zbc
 CFLAGS += -I$(INCLUDE_DIR) -I$(LIB_DIR) -I$(UTIL_DIR) -I$(SRC_DIR) -I$(STRATEGY_DIR)
 
 
-default: build-libs build-utils build-algorithm test
+default: build-libs build-utils build-algorithm build-tools test
 
 test: 
 	$(CC) $(CFLAGS) -l$(DLL) $(OBJ_LIBS) $(OBJ_UTILS) $(OBJ_ALGORITHM) $(OBJ_STRATEGIES) main.c -o test
@@ -44,6 +47,9 @@ build-algorithm:
 	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/cars.c -o ${STRATEGY_DIR}/cars.o
 	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/most.c -o ${STRATEGY_DIR}/most.o
 
+build-tools:
+	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_full.c -o ${TOOLS_DIR}/zbd_set_full
+
 clean: 
 	rm -f ./*.o
 
@@ -52,5 +58,6 @@ clean:
 	rm -f ${ALGORITHM}/*.o
 	rm -f ${SRC_DIR}/*.o
 	rm -f ${STRATEGY_DIR}/*.o
-	
+	rm -f ${OBJ_TOOLS}
+
 	rm -f ./test
