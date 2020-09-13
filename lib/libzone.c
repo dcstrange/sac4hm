@@ -100,8 +100,8 @@ ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, int force,
 
     if(ret < 0){
         fprintf(stderr, 
-            "[Err] on zbd_write_zone() zoneId=%u, inzone_offset=%lu count=%lu, return=%ld: %s\n", 
-            zoneId, inzone_blkoff, blkcnt, ret, strerror(errno));
+            "[Err] on zbd_write_zone() zoneId=%lu, sec_offset=%lu sec_count=%lu, return=%ld: %s\n", 
+            zoneId, sector_start, count_sector, ret, strerror(-ret));
     }
 
     zbc_close_zone(dev, sector_start, ZBC_OP_CLOSE_ZONE);
