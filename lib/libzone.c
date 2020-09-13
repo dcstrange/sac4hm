@@ -61,7 +61,7 @@ int zbd_open(const char *filename, int flags, struct zbc_device **dev)
 }
  
 ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf, 
-             uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
+             uint64_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
 {
     #ifdef NO_REAL_DISK_IO
         return blkcnt;
@@ -83,7 +83,7 @@ ssize_t zbd_read_zblk(struct zbc_device *dev, void *buf,
 
 
 ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, int force, 
-            uint32_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
+            uint64_t zoneId, uint64_t inzone_blkoff, size_t blkcnt)
 {
     #ifdef NO_REAL_DISK_IO
         return blkcnt;
@@ -109,7 +109,7 @@ ssize_t zbd_write_zone(struct zbc_device *dev, const void *wbuf, int force,
 }
 
 ssize_t zbd_read_zone(struct zbc_device *dev,  
-            uint32_t zoneId, uint64_t zone_offset, size_t count, 
+            uint64_t zoneId, uint64_t zone_offset, size_t count, 
             void *buf)
 {
     #ifdef NO_REAL_DISK_IO
@@ -127,7 +127,7 @@ ssize_t zbd_read_zone(struct zbc_device *dev,
 }
 
 
-int zbd_set_wp(struct zbc_device *dev, uint32_t zoneId, uint64_t inzone_blkoff) 
+int zbd_set_wp(struct zbc_device *dev, uint64_t zoneId, uint64_t inzone_blkoff) 
 {
     // #ifdef NO_REAL_DISK_IO
     //     return 0;
@@ -136,7 +136,7 @@ int zbd_set_wp(struct zbc_device *dev, uint32_t zoneId, uint64_t inzone_blkoff)
 	struct zbc_device_info info;
 
 	/* Set WP */
-    uint64_t sector = zoneId * N_ZONESEC;
+    uint64_t sector = (uint64_t)zoneId * N_ZONESEC;
     uint64_t wp_sector = sector + nblk_to_nsec(inzone_blkoff);
 
 	zbc_get_device_info(dev, &info);
@@ -155,6 +155,11 @@ int zbd_set_wp(struct zbc_device *dev, uint32_t zoneId, uint64_t inzone_blkoff)
             return -ESPIPE; //illegal seek
         }
         ret = zbc_reset_zone(dev, sector, 0);
+        if (ret != 0) {
+            fprintf(stderr,
+                "[%s] reset zone error.\n", __func__);
+            return ret;
+	    }
     }
 
 	return 0;

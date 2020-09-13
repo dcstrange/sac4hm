@@ -279,7 +279,7 @@ alloc_page_for(uint64_t blkoff, int op)
 
 int read_block(uint64_t blkoff, void *buf)
 {
-    uint32_t zoneId = blkoff / N_ZONEBLK;
+    uint64_t zoneId = blkoff / N_ZONEBLK;
     if(zoneId > N_SEQ_ZONES){
         log_err_sac("func %s: block LBA overflow. \n", __func__);
         return -1;
@@ -340,7 +340,7 @@ int read_block(uint64_t blkoff, void *buf)
 
 int write_block(uint64_t blkoff, void *buf)
 {
-    uint32_t zoneId = blkoff / N_ZONEBLK;
+    uint64_t zoneId = blkoff / N_ZONEBLK;
     if(zoneId > N_SEQ_ZONES){
         log_err_sac("func %s: block LBA overflow. \n", __func__);
         return -1;
@@ -635,15 +635,17 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
 
     /* Set target zone write pointer */
     ret = zbd_set_wp(STT.ZBD, zoneId, from_blk);
-    if(ret < 0)
-        return ret;
- 
+    if(ret < 0){
+        log_err_sac("[%s] Fail to Set Zone[%d] 's WP to [%lu]. \n", __func__, zoneId, from_blk);
+        exit(-1);
+    }
+    log_info_sac("[RMW] Set Zone[%d] 's WP to [%lu]. \n", zoneId, from_blk);
+
     /* Write-Back */
     ret = zbd_write_zone(STT.ZBD, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
 
     if(ret < 0)
         return ret;
-
     
     STT.rmw_times ++;
     STT.time_zbd_rmw ++;
