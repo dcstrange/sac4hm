@@ -285,7 +285,9 @@ int read_block(uint64_t blkoff, void *buf)
         return -1;
     }
 
+    struct timeval tv_start, tv_stop;
     int ret;
+
     int op = FOR_READ;
     // Lap(&tv_cmstart);
     static struct cache_page *page;
@@ -306,7 +308,11 @@ int read_block(uint64_t blkoff, void *buf)
 
 /* handle data */
     //read from zbd
+    Lap(&tv_start);
     ret = zbd_read_zblk(STT.ZBD, buf, page->belong_zoneId, page->blkoff_inzone, 1);
+    Lap(&tv_stop);
+    STT.time_zbd_read += TimerInterval_seconds(&tv_start, &tv_stop);
+
     if(ret < 0) {log_err_sac("read from zbd error. \n");}
 
     // write to cache
@@ -620,9 +626,12 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
 
 int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g CARS) can use it. 
 {
+    int ret;
+    struct timeval tv_start, tv_stop;
     log_info_sac("[%s] start r-m-w zone [%d] ... ", __func__, zoneId);
 
-    int ret;
+    Lap(&tv_start);
+
     struct zbd_zone *tg_zone = zones_collection + zoneId;
 
     /* Read blocks from ZBD refered to Bitmap*/
@@ -654,10 +663,9 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
         log_err_sac("[%s] Fail to Write Zone [%d]. \n", __func__, zoneId);
         exit(-1);
     }
-
-    
+    Lap(&tv_stop);
+    STT.time_zbd_rmw += TimerInterval_seconds(&tv_start, &tv_stop);
     STT.rmw_times ++;
-    STT.time_zbd_rmw ++;
     STT.rmw_scope += ret;
 
     log_info_sac("finish.\n");
