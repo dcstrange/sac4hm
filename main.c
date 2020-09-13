@@ -20,10 +20,10 @@
 #include "timerUtils.h"
 #include "log.h"
 
-char zbd_path[] = "/home/fei/devel/zbd/libzbc/zbd-emu-disk";
 
 /* test functinos */
 int sac_report_zone(struct zbc_device *dev, unsigned int from_zoneId);
+int analyze_opts(int argc, char **argv);
 
 void test_bitmap();
 void test_readblk_bitmap();
@@ -36,6 +36,7 @@ static void reportSTT();
 static void reportSTT_brief();
 static void  resetSTT();
 
+int InitZBD();
 /* -------------- */
 const char *tracefile[] = {
     "./traces/src1_2.csv.req",
@@ -51,16 +52,50 @@ const char *tracefile[] = {
    // "./traces/production-LiveMap-Backend-4K.req", // --> not in used.
     "./traces/long.csv.req"                           // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
 };
+    
+char zbd_path[] = "/home/fei/devel/zbd/libzbc/zbd-emu-disk";
 
-int analyze_opts(int argc, char **argv);
 void main(int argc, char **argv){
 
     analyze_opts(argc, argv);
 
-    FILE *trace = fopen(tracefile[10],"rt");
-
+    InitZBD();
     CacheLayer_Init();
+
+    FILE *trace = fopen(tracefile[0],"rt");
     trace_to_iocall(trace);
+    
+}
+
+int InitZBD()
+{
+    /* Detect ZBD and get info*/
+    struct zbc_device_info dev_info;
+    int ret = zbc_device_is_zoned(zbd_path, true, &dev_info);
+
+    if(ret == 1){
+        printf("Zone Block Device %s:\n", zbd_path);
+        zbc_print_device_info(&dev_info, stdout);
+        DASHHH;
+    } else if(ret == 0){
+        printf("%s is not a zoned block device\n", zbd_path);
+        return ret; 
+    } else
+    {
+        fprintf(stderr, 
+                "The given device detect failed %s: %d, %s\n", 
+                zbd_path, ret, strerror(-ret));
+        exit(EXIT_FAILURE);
+    }
+
+/* Open ZBD */
+    //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+    ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &STT.ZBD);
+
+    if(ret < 0){
+        log_err_sac("Open ZBD failed.\n");
+        exit(EXIT_FAILURE);
+    }
 }
 
 void trace_to_iocall(FILE *trace)
@@ -549,7 +584,7 @@ int analyze_opts(int argc, char **argv)
 
 // // }
 
-// int test_zbd()
+// int open_zbd(char *path, ,zbc_device **dev)
 // {
 // /* Detect ZBD and get info*/
 //     struct zbc_device_info dev_info;
@@ -577,7 +612,7 @@ int analyze_opts(int argc, char **argv)
 
 //     if(ret < 0)
 //         exit(EXIT_FAILURE);
-
+// }
 // /* Write zone */
 //     void *wbuf = malloc(ZONESIZE);
 //     memset(wbuf, '0', ZONESIZE);
@@ -596,3 +631,63 @@ int analyze_opts(int argc, char **argv)
 //     free(wbuf);
 //     ret = zbc_close(zbd);
 // }
+
+
+int set_zbd_full()
+{
+/* Detect ZBD and get info*/
+    struct zbc_device_info dev_info;
+    int ret = zbc_device_is_zoned(zbd_path, false, &dev_info);
+
+    if(ret == 1){
+        printf("Zone Block Device %s:\n", zbd_path);
+        zbc_print_device_info(&dev_info, stdout);
+        DASHHH;
+    } else if(ret == 0){
+        printf("%s is not a zoned block device\n", zbd_path);
+        return ret;
+    } else
+    {
+        fprintf(stderr,
+                "The given device detect failed %s: %d, %s\n",
+                zbd_path, ret, strerror(-ret));
+        exit(EXIT_FAILURE);
+    }
+
+/* Open ZBD */
+    log_info_sac("Open ZBD: %s ... ", zbd_path);
+    struct zbc_device *zbd;
+    //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+    ret = zbc_open(zbd_path, O_RDWR | O_DIRECT | ZBC_O_DRV_ATA , &zbd);
+    if(ret < 0){
+        log_err_sac("FAILED.\n");
+        exit(EXIT_FAILURE);
+    } else
+    {
+        log_info_sac("SUCCESS.\n");
+    }
+
+/* Finish all ZONE */
+    log_info_sac("Finish all ZONE ... ", zbd_path);
+    uint64_t n_seq = 36878;
+    for(uint64_t i = 0; i < n_seq; i ++){
+        uint64_t sector_lba = 198180864 + (i*524288);
+        ret = zbc_finish_zone(zbd, sector_lba, 0);
+    if(ret < 0){
+        log_err_sac("FAILED.\n");
+        exit(EXIT_FAILURE);
+    } else
+    {
+        log_info_sac("SUCCESS: %d, %lu \n", i, sector_lba);
+    }
+    }
+
+    if(ret < 0){
+        log_err_sac("FAILED.\n");
+        exit(EXIT_FAILURE);
+    } else
+    {
+        log_info_sac("SUCCESS.\n");
+    }
+}
+ 

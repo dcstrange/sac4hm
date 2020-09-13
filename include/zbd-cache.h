@@ -58,6 +58,8 @@ extern int write_block(uint64_t blkoff, void *buf);
 
 struct RuntimeSTAT{
     /** This user basic info */
+    struct zbc_device *ZBD;
+
     int traceId;
     int workload_mode;
     uint64_t n_cache_pages;

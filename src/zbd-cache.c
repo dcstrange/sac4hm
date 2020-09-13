@@ -38,7 +38,6 @@ struct cache_algorithm {
 
 
 /* Global objects */
-struct zbc_device *zbd;
 int cache_dev; 
 
 struct hash_table *hashtb_cblk;  // hash index for cached block
@@ -76,6 +75,7 @@ static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt);
 /* STT */
 struct RuntimeSTAT STT = 
 {
+    .ZBD = NULL,
     .traceId = 0,
     .workload_mode = 0x02, //0x01 | 0x02,
     .start_Blkoff = N_ZONEBLK * (N_ZONES - N_SEQ_ZONES),
@@ -306,7 +306,7 @@ int read_block(uint64_t blkoff, void *buf)
 
 /* handle data */
     //read from zbd
-    ret = zbd_read_zblk(zbd, buf, page->belong_zoneId, page->blkoff_inzone, 1);
+    ret = zbd_read_zblk(STT.ZBD, buf, page->belong_zoneId, page->blkoff_inzone, 1);
     if(ret < 0) {log_err_sac("read from zbd error. \n");}
 
     // write to cache
@@ -544,7 +544,7 @@ static inline int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64
             zblkoff = (this_word * BITS_PER_LONG) + pos_from;
             buf = zonebuf + (zblkoff * BLKSIZE);
 
-            cnt = zbd_read_zblk(zbd, buf, zoneId, zblkoff, pos_to - pos_from + 1);
+            cnt = zbd_read_zblk(STT.ZBD, buf, zoneId, zblkoff, pos_to - pos_from + 1);
             if(cnt < 0)
                 return cnt;
 
@@ -634,12 +634,12 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
 
 
     /* Set target zone write pointer */
-    ret = zbd_set_wp(zbd, zoneId, from_blk);
+    ret = zbd_set_wp(STT.ZBD, zoneId, from_blk);
     if(ret < 0)
         return ret;
  
     /* Write-Back */
-    ret = zbd_write_zone(zbd, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
+    ret = zbd_write_zone(STT.ZBD, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
 
     if(ret < 0)
         return ret;

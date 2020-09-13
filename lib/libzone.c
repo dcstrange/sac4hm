@@ -129,32 +129,33 @@ ssize_t zbd_read_zone(struct zbc_device *dev,
 
 int zbd_set_wp(struct zbc_device *dev, uint32_t zoneId, uint64_t inzone_blkoff) 
 {
-    #ifdef NO_REAL_DISK_IO
-        return 0;
-    #endif
-
+    // #ifdef NO_REAL_DISK_IO
+    //     return 0;
+    // #endif
+    int ret;
 	struct zbc_device_info info;
-
-	zbc_get_device_info(dev, &info);
-	if (info.zbd_type != ZBC_DT_FAKE) {
-		fprintf(stderr,
-			"Device is not using the FAKE backend driver\n");
-        return -1;
-	}
 
 	/* Set WP */
     uint64_t sector = zoneId * N_ZONESEC;
     uint64_t wp_sector = sector + nblk_to_nsec(inzone_blkoff);
-	int ret = zbc_set_write_pointer(dev, sector, wp_sector);
-	if (ret != 0) {
-		fprintf(stderr,
-			"zbc_set_write_pointer failed\n");
-		return ret;
-	}
 
-    printf("Setting zone %lu write pointer block to %lu...\n", 
-        zoneId,
-        inzone_blkoff);
+	zbc_get_device_info(dev, &info);
+	if (info.zbd_type & ZBC_DT_FAKE) {
+        ret = zbc_set_write_pointer(dev, sector, wp_sector);
+        if (ret != 0) {
+            fprintf(stderr,
+                "zbc_set_write_pointer failed\n");
+            return ret;
+	    }
+    } else
+    {
+        if(inzone_blkoff != 0){
+            fprintf(stderr, 
+                    "Real SMR does not support the set write pointer to anywhere, only alow reset whole zone. ");
+            return -ESPIPE; //illegal seek
+        }
+        ret = zbc_reset_zone(dev, sector, 0);
+    }
 
 	return 0;
 }
