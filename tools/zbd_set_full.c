@@ -47,9 +47,10 @@ int zbd_set_full()
 		return 1;
 	}
 
-	printf("%u / %u zone%s:\n", nz, nr_zones, (nz > 1) ? "s" : "");
+	fprintf(stdout, "%u / %u zone%s:\n", nz, nr_zones, (nz > 1) ? "s" : "");
 
-    printf("Start set all zone finish ...");
+    fprintf(stdout, "Start set all zone finish ...");
+    fflush(stdout);
 	unsigned long long sector = 0;
 	for (int i = 0; i < (int)nz; i++) {
 
@@ -75,7 +76,7 @@ int zbd_set_full()
         sector += zbc_zone_length(z);
 	}
 
-    printf("Success.\n");
+    fprintf(stdout, "Success.\n");
     return 0;
 
 }
