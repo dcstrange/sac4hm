@@ -14,7 +14,7 @@
 
 #ifndef ZBD_SPEC
 #define ZBD_SPEC5
-#   define ZONESIZE 26843546
+#   define ZONESIZE  268435456
 #   define N_ZONESEC 524288
 #   define N_ZONEBLK 65536
 
