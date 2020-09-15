@@ -14,4 +14,5 @@ extern int cars_logout(struct cache_page *page, int op);
 
 extern int cars_writeback_privi();
 
+extern int cars_flush_allcache();
 #endif

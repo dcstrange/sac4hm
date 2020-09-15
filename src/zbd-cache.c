@@ -34,6 +34,7 @@ struct cache_algorithm {
     int (*logout)(struct cache_page *page, int op); 
     
     int (*GC_privillege)();
+    int (*flush_all_cache)();
 };
 
 
@@ -63,6 +64,7 @@ static inline struct cache_page * pop_freebuf();
 static inline void push_freebuf(struct cache_page *page);
 
 static inline int init_page(struct cache_page *page, uint64_t blkoff, int op); 
+static struct cache_page *retrive_cache_page(uint64_t tg_blk, int op);
 static inline int try_recycle_page(struct cache_page *page, int op);
 
 static inline struct cache_page * alloc_page_for(uint64_t blkoff, int op); // Entry Point
@@ -120,6 +122,14 @@ struct RuntimeSTAT STT =
     .time_zbd_read = 0,
     .time_zbd_rmw = 0,
 
+
+    /* Flush All cache data back */
+    .rmw_scope_flushed = 0,
+    .rmw_times_flushed =0,
+
+    .time_zbd_rmw_flushed = 0,
+
+
     .debug = NULL,
 };
 
@@ -129,6 +139,112 @@ static struct timeval tv_start, tv_stop;
 // static timeval tv_bastart, tv_bastop;
 // static timeval tv_cmstart, tv_cmstop;
 microsecond_t msec_r_hdd, msec_w_hdd, msec_r_ssd, msec_w_ssd, msec_bw_hdd = 0;
+
+
+/********************************
+**** Interface for workload *****
+*********************************/
+
+int read_block(uint64_t blkoff, void *buf)
+{
+    uint64_t zoneId = blkoff / N_ZONEBLK;
+    if(zoneId > N_SEQ_ZONES){
+        log_err_sac("func %s: block LBA overflow. \n", __func__);
+        return -1;
+    }
+
+    struct timeval tv_start, tv_stop;
+    int ret;
+
+    int op = FOR_READ;
+    // Lap(&tv_cmstart);
+    static struct cache_page *page;
+
+    page = retrive_cache_page(blkoff, op);
+    if(page) // cache hit
+    {
+        STT.hitnum_r ++, STT.hitnum_s ++;
+        ret = pread_cache(buf, page->pos, 1);
+        return ret;
+    }
+    
+/* cache miss */ 
+    STT.missnum_r ++, STT.missnum_s ++;
+    page = alloc_page_for(blkoff, op);
+    if(!page)
+        return -1;
+
+/* handle data */
+    //read from zbd
+    Lap(&tv_start);
+    ret = zbd_read_zblk(STT.ZBD, buf, page->belong_zoneId, page->blkoff_inzone, 1);
+    Lap(&tv_stop);
+    STT.time_zbd_read += TimerInterval_seconds(&tv_start, &tv_stop);
+
+    if(ret < 0) {log_err_sac("read from zbd error. \n");}
+
+    // write to cache
+    ret = pwrite_cache(buf, page->pos, 1);
+    if(ret < 0) {log_err_sac("write cache error. \n");}
+
+    return ret;
+
+
+        // msec_r_hdd = TimerInterval_MICRO(&tv_start, &tv_stop);
+        // STT.time_read_hdd += Mirco2Sec(msec_r_hdd);
+        // STT.load_hdd_blocks++;
+
+        // dev_pwrite(cache_dev, ssd_buffer, BLKSZ, page->pos * BLKSZ);
+        // msec_w_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
+        // STT.time_write_ssd += Mirco2Sec(msec_w_ssd);
+        // STT.flush_ssd_blocks++;
+
+
+
+        // dev_pread(cache_fd, ssd_buffer, BLKSZ, page->pos * BLKSZ);
+        // msec_r_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
+
+        // STT.hitnum_r++;
+        // STT.time_read_ssd += Mirco2Sec(msec_r_ssd);
+        // STT.load_ssd_blocks++;
+    }
+
+int write_block(uint64_t blkoff, void *buf)
+{
+    uint64_t zoneId = blkoff / N_ZONEBLK;
+    if(zoneId > N_SEQ_ZONES){
+        log_err_sac("func %s: block LBA overflow. \n", __func__);
+        return -1;
+    }
+
+    int ret;
+    int op = FOR_WRITE;
+
+    // Lap(&tv_cmstart);
+    static struct cache_page *page;
+
+    page = retrive_cache_page(blkoff, op);
+    if(page) // cache hit
+    {
+        STT.hitnum_w ++, STT.hitnum_s ++;
+        ret = pwrite_cache(buf, page->pos, 1);
+        return ret;
+    }
+    
+/* cache miss */ 
+    STT.missnum_w ++, STT.missnum_s ++;
+    page = alloc_page_for(blkoff, op);
+    if(!page)
+        return -1;
+
+/* handle data */
+    // write to cache
+    ret = pwrite_cache(buf, page->pos, 1);
+    if(ret < 0) {log_err_sac("write cache error. \n");}
+
+    return ret;
+}
+
 
 
 /*
@@ -147,6 +263,7 @@ void CacheLayer_Init()
             algorithm.logout = cars_logout;
             algorithm.hit = cars_hit;
             algorithm.GC_privillege = cars_writeback_privi;
+            algorithm.flush_all_cache = cars_flush_allcache;
             break;
         case ALG_MOST:
             algorithm.init = most_init;
@@ -171,6 +288,10 @@ void CacheLayer_Init()
     if (r_init_cachepages == -1 || r_init_hashtb == -1 || r_init_algorithm == -1)
         exit(EXIT_FAILURE);
 
+}
+
+int CacheLayer_Uninstall()
+{
 }
 
 static int
@@ -277,112 +398,9 @@ alloc_page_for(uint64_t blkoff, int op)
 }
 
 
-int read_block(uint64_t blkoff, void *buf)
-{
-    uint64_t zoneId = blkoff / N_ZONEBLK;
-    if(zoneId > N_SEQ_ZONES){
-        log_err_sac("func %s: block LBA overflow. \n", __func__);
-        return -1;
-    }
-
-    struct timeval tv_start, tv_stop;
-    int ret;
-
-    int op = FOR_READ;
-    // Lap(&tv_cmstart);
-    static struct cache_page *page;
-
-    page = retrive_cache_page(blkoff, op);
-    if(page) // cache hit
-    {
-        STT.hitnum_r ++, STT.hitnum_s ++;
-        ret = pread_cache(buf, page->pos, 1);
-        return ret;
-    }
-    
-/* cache miss */ 
-    STT.missnum_r ++, STT.missnum_s ++;
-    page = alloc_page_for(blkoff, op);
-    if(!page)
-        return -1;
-
-/* handle data */
-    //read from zbd
-    Lap(&tv_start);
-    ret = zbd_read_zblk(STT.ZBD, buf, page->belong_zoneId, page->blkoff_inzone, 1);
-    Lap(&tv_stop);
-    STT.time_zbd_read += TimerInterval_seconds(&tv_start, &tv_stop);
-
-    if(ret < 0) {log_err_sac("read from zbd error. \n");}
-
-    // write to cache
-    ret = pwrite_cache(buf, page->pos, 1);
-    if(ret < 0) {log_err_sac("write cache error. \n");}
-
-    return ret;
-
-
-        // msec_r_hdd = TimerInterval_MICRO(&tv_start, &tv_stop);
-        // STT.time_read_hdd += Mirco2Sec(msec_r_hdd);
-        // STT.load_hdd_blocks++;
-
-        // dev_pwrite(cache_dev, ssd_buffer, BLKSZ, page->pos * BLKSZ);
-        // msec_w_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
-        // STT.time_write_ssd += Mirco2Sec(msec_w_ssd);
-        // STT.flush_ssd_blocks++;
-
-
-
-        // dev_pread(cache_fd, ssd_buffer, BLKSZ, page->pos * BLKSZ);
-        // msec_r_ssd = TimerInterval_MICRO(&tv_start, &tv_stop);
-
-        // STT.hitnum_r++;
-        // STT.time_read_ssd += Mirco2Sec(msec_r_ssd);
-        // STT.load_ssd_blocks++;
-    }
-
-
-
-
-int write_block(uint64_t blkoff, void *buf)
-{
-    uint64_t zoneId = blkoff / N_ZONEBLK;
-    if(zoneId > N_SEQ_ZONES){
-        log_err_sac("func %s: block LBA overflow. \n", __func__);
-        return -1;
-    }
-
-    int ret;
-    int op = FOR_WRITE;
-
-    // Lap(&tv_cmstart);
-    static struct cache_page *page;
-
-    page = retrive_cache_page(blkoff, op);
-    if(page) // cache hit
-    {
-        STT.hitnum_w ++, STT.hitnum_s ++;
-        ret = pwrite_cache(buf, page->pos, 1);
-        return ret;
-    }
-    
-/* cache miss */ 
-    STT.missnum_w ++, STT.missnum_s ++;
-    page = alloc_page_for(blkoff, op);
-    if(!page)
-        return -1;
-
-/* handle data */
-    // write to cache
-    ret = pwrite_cache(buf, page->pos, 1);
-    if(ret < 0) {log_err_sac("write cache error. \n");}
-
-    return ret;
-}
-
-/******************
+/*******************************
 **** Cache Pages Utilities *****
-*******************/
+*******************************/
 static inline struct cache_page *
 pop_freebuf()
 {
@@ -403,7 +421,6 @@ push_freebuf(struct cache_page *page)
 
     cache_rt.n_page_used --;
 }
-
 
 static inline int init_page(struct cache_page *page, uint64_t blkoff, int op)
 {
@@ -435,7 +452,6 @@ static inline int init_page(struct cache_page *page, uint64_t blkoff, int op)
     }
     return 0;
 }
-
 
 static inline int try_recycle_page(struct cache_page *page, int op) 
 { 
@@ -481,9 +497,9 @@ static inline int try_recycle_page(struct cache_page *page, int op)
     return 0;
 }
 
-/******************
+/*****************************
 **** Cache Dev Utilities *****
-*******************/
+******************************/
 
 static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 {
@@ -520,9 +536,9 @@ static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 
 
 
-/******************
+/***********************
 **** RMW Utilities *****
-*******************/
+************************/
 
 static inline int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap)
 {

@@ -156,6 +156,11 @@ EVICT_ZONE:
         return RMW(zoneId, zblk_from, zblk_to);
 }
 
+int cars_flush_allcache(){
+  
+    return 0;
+}
+
 static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to, uint32_t *zblks_ars)
 {
     int best_zoneId = -1;

@@ -320,6 +320,12 @@ static void  resetSTT()
 
     /* 3. ZBD */
     STT.time_zbd_read = 0;
+
+    /* Flush All cache data back */
+    STT.rmw_scope_flushed = 0;
+    STT.rmw_times_flushed =0;
+
+    STT.time_zbd_rmw_flushed = 0;
 };
 
 static uintmax_t

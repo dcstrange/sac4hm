@@ -37,6 +37,7 @@ struct zbd_zone{
 
     uint32_t cblks;
     zBitmap *bitmap;
+
     void * priv;
 };
 
@@ -48,13 +49,18 @@ struct cache_runtime
     //  pthread_mutex_t lock;
 };
 extern struct cache_runtime cache_rt;
-
 extern struct zbd_zone *zones_collection;
 
+/********************************
+**** Interface for workload *****
+*********************************/
 extern void CacheLayer_Init();
+
 extern int read_block(uint64_t blkoff, void *buf);
+
 extern int write_block(uint64_t blkoff, void *buf);
 
+extern int CacheLayer_Uninstall();
 
 struct RuntimeSTAT{
     /** This user basic info */
@@ -107,12 +113,17 @@ struct RuntimeSTAT{
     double time_zbd_read;
     double time_zbd_rmw;
 
+    /* Flush All cache data back */
+    uint64_t rmw_scope_flushed;
+    uint64_t rmw_times_flushed;
+
+    double time_zbd_rmw_flushed;
     void *debug;
 };
 
 extern struct RuntimeSTAT STT;
 
-/* Interface provided to Algorithms (eg. CARS) */
+/* Interface provided to Algorithms (eg. CARS, MOST) */
 extern int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk); 
 extern int Page_force_drop(struct cache_page *page);
 
