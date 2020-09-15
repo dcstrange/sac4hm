@@ -18,8 +18,8 @@
 #   define N_ZONESEC 524288
 #   define N_ZONEBLK 65536
 
-#   define N_ZONES 40000
-#   define N_SEQ_ZONES 40000
+#   define N_ZONES 37256
+#   define N_SEQ_ZONES 36878
 #endif
 
 #define NO_REAL_DISK_IO 
