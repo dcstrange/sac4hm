@@ -20,7 +20,8 @@ OBJ_STRATEGIES = ${STRATEGY_DIR}/cars.o \
 				 ${STRATEGY_DIR}/most.o
 
 TOOLS_DIR = ./tools
-OBJ_TOOLS = ${TOOLS_DIR}/zbd_set_full
+OBJ_TOOLS = ${TOOLS_DIR}/zbd_set_full \
+			${TOOLS_DIR}/zbd_set_empty
 
 # DLL
 DLL = zbc
@@ -49,6 +50,7 @@ build-algorithm:
 
 build-tools:
 	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_full.c -o ${TOOLS_DIR}/zbd_set_full
+	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_empty.c -o ${TOOLS_DIR}/zbd_set_empty
 
 clean: 
 	rm -f ./*.o
