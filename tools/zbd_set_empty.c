@@ -49,7 +49,7 @@ int zbd_set_empty()
 
 	fprintf(stdout, "%u / %u zone%s:\n", nz, nr_zones, (nz > 1) ? "s" : "");
 
-    fprintf(stdout, "Start set all zone finish ...");
+    fprintf(stdout, "Start reset all zone ...");
     fflush(stdout);
 	unsigned long long sector = 0;
 	for (int i = 0; i < (int)nz; i++) {
