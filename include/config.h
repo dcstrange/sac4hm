@@ -22,7 +22,7 @@
 #   define N_SEQ_ZONES 36878
 #endif
 
-#define NO_REAL_DISK_IO 
+//#define NO_REAL_DISK_IO 
 
 #define DEBUG
 #ifdef DEBUG

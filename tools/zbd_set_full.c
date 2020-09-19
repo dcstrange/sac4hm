@@ -17,7 +17,7 @@ int zbd_set_full()
 /* Open ZBD */
     struct zbc_device *zbd;
     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-    int ret = zbc_open(zbd_path, O_RDWR , &zbd);
+    int ret = zbc_open(zbd_path, O_RDONLY , &zbd);
     if(ret != 0){
 		if (ret == -ENODEV)
 			fprintf(stderr,
@@ -38,6 +38,7 @@ int zbd_set_full()
 		return 1;
 	}
 
+	nz = nr_zones;
 	zones = (struct zbc_zone *) calloc(nr_zones, sizeof(struct zbc_zone));
 
 	/* Get zone information */
