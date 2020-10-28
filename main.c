@@ -54,7 +54,7 @@ const char *tracefile[] = {
     "./traces/long.csv.req"                           // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
 };
     
-char zbd_path[] = "/home/fei/devel/zbd/libzbc/zbd-emu-disk";
+char zbd_path[] = "/dev/sdd";
 
 void main(int argc, char **argv){
 
@@ -91,7 +91,7 @@ int InitZBD()
 
 /* Open ZBD */
     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-    ret = zbd_open(zbd_path, O_RDWR | ZBC_O_DRV_FAKE , &STT.ZBD);
+    ret = zbd_open(zbd_path, O_RDWR | O_DIRECT , &STT.ZBD);
 
     if(ret < 0){
         log_err_sac("Open ZBD failed.\n");

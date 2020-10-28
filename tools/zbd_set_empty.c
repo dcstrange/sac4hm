@@ -39,7 +39,8 @@ int zbd_set_empty()
 	}
 
 	zones = (struct zbc_zone *) calloc(nr_zones, sizeof(struct zbc_zone));
-
+	
+	nz = nr_zones;
 	/* Get zone information */
 	ret = zbc_report_zones(zbd, 0, ZBC_RO_ALL, zones, &nz);
 	if (ret != 0) {
