@@ -6,6 +6,7 @@
 #include <memory.h>
 #include <unistd.h> //pread pwrite
 #include <linux/types.h>
+#include <fcntl.h>
 
 
 #include "config.h"
@@ -39,7 +40,7 @@ struct cache_algorithm {
 
 
 /* Global objects */
-int cache_dev; 
+int DEV_CACHE; 
 
 struct hash_table *hashtb_cblk;  // hash index for cached block
 struct cache_algorithm algorithm;
@@ -254,6 +255,11 @@ int write_block(uint64_t blkoff, void *buf)
  */
 void CacheLayer_Init()
 {
+    if((DEV_CACHE = open(config_dev_cache, O_RDWR | O_DIRECT)) < 0){
+        log_err_sac("Unable to open CACHE device file: %s", config_dev_cache);
+        exit(-1);
+    }
+    
     int r_init_cachepages = init_cache_pages();
     int r_init_hashtb = HashTab_crt(STT.n_cache_pages, &hashtb_cblk); 
 
@@ -506,16 +512,16 @@ static inline int try_recycle_page(struct cache_page *page, int op)
 
 static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 {
-//    #ifdef NO_REAL_DISK_IO
+    #ifdef NO_REAL_DISK_IO
         return blkcnt;
-//    #endif
+    #endif
 
     uint64_t offset = blkoff * BLKSIZE, 
              nbytes = blkcnt * BLKSIZE;
 
     
     Lap(&tv_start);
-    int ret = pread(cache_dev, buf, nbytes, offset);
+    int ret = pread(DEV_CACHE, buf, nbytes, offset);
     Lap(&tv_stop);
 
     return ret;
@@ -523,15 +529,15 @@ static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 
 static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 {
- //   #ifdef NO_REAL_DISK_IO
+    #ifdef NO_REAL_DISK_IO
         return blkcnt;
- //   #endif
+    #endif
 
     uint64_t offset = blkoff * BLKSIZE, 
              nbytes = blkcnt * BLKSIZE;
 
     Lap(&tv_start);
-    int ret = pwrite(cache_dev, buf, nbytes, offset);
+    int ret = pwrite(DEV_CACHE, buf, nbytes, offset);
     Lap(&tv_stop);
 
     return ret;
