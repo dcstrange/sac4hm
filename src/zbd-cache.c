@@ -26,7 +26,7 @@ struct zbc_device;
 
 
 
-/* cache space runtime info. */
+/* cache algorithm operation define */
 struct cache_algorithm {
     int (*init)();
     int (*hit)(struct cache_page *page, int op);
@@ -140,6 +140,8 @@ static struct timeval tv_start, tv_stop;
 // static timeval tv_cmstart, tv_cmstop;
 microsecond_t msec_r_hdd, msec_w_hdd, msec_r_ssd, msec_w_ssd, msec_bw_hdd = 0;
 
+/* log file */
+static FILE *f_log; 
 
 /********************************
 **** Interface for workload *****
@@ -285,6 +287,7 @@ void CacheLayer_Init()
     printf("r_init_cachepages: %d, r_init_hashtb: %d, r_init_algorithm: %d\n",
            r_init_cachepages, r_init_hashtb, r_init_algorithm);
 
+    f_log = fopen("./log/test.log","w+");
     if (r_init_cachepages == -1 || r_init_hashtb == -1 || r_init_algorithm == -1)
         exit(EXIT_FAILURE);
 
@@ -673,18 +676,24 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     }
 
     /* Write-Back */
-    ret = zbd_write_zone(STT.ZBD, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
+    ssize_t scope = zbd_write_zone(STT.ZBD, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
 
-    if(ret < 0){
+    if(scope < 0){
         log_err_sac("[%s] Fail to Write Zone [%d]. \n", __func__, zoneId);
         exit(-1);
     }
     Lap(&tv_stop);
-    STT.time_zbd_rmw += TimerInterval_seconds(&tv_start, &tv_stop);
+
+    double secs = TimerInterval_seconds(&tv_start, &tv_stop);
+    STT.time_zbd_rmw += secs;
     STT.rmw_times ++;
-    STT.rmw_scope += ret;
+    STT.rmw_scope += scope;
 
     log_info_sac("finish.\n");
+
+    static char buf_log[256];
+    sprintf(buf_log, "%ld, %.2f\n", scope, secs);
+    log_write_sac(f_log, buf_log);
     return ret;
 }
 

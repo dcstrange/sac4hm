@@ -37,6 +37,7 @@ static void reportSTT_brief();
 static void  resetSTT();
 
 int InitZBD();
+
 /* -------------- */
 const char *tracefile[] = {
     "./traces/src1_2.csv.req",
@@ -62,7 +63,7 @@ void main(int argc, char **argv){
     InitZBD();
     CacheLayer_Init();
 
-    FILE *trace = fopen(tracefile[0],"rt");
+    FILE *trace = fopen(tracefile[10],"rt");
     trace_to_iocall(trace);
     
 }
