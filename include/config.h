@@ -18,15 +18,20 @@
 #   define N_ZONESEC 524288
 #   define N_ZONEBLK 65536
 
-#   define N_ZONES 37256
+#   define N_ZONES 37256    // = N_COV_ZONE + N_SEQ_ZONES
+#   define N_COV_ZONE 378
 #   define N_SEQ_ZONES 36878
 #endif
 
-//#define NO_REAL_DISK_IO 
+#define NO_REAL_DISK_IO 
 
 #define DEBUG
 #ifdef DEBUG
 # define DEBUG_CARS
 #endif
+
+char config_dev_zbd[] = "/dev/sdd";
+char config_dev_cache[]; 
+
 
 #endif
