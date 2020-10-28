@@ -30,8 +30,8 @@
 # define DEBUG_CARS
 #endif
 
-char config_dev_zbd[] = "/dev/sdd";
-char config_dev_cache[]; 
+static char config_dev_zbd[] = "/dev/sdd";
+static char config_dev_cache[] = "/mnt/cache/raw"; 
 
 
 #endif

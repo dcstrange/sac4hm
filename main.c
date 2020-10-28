@@ -54,7 +54,7 @@ const char *tracefile[] = {
     "./traces/long.csv.req"                           // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
 };
     
-char zbd_path[] = "/dev/sdd";
+
 
 void main(int argc, char **argv){
 
@@ -72,26 +72,26 @@ int InitZBD()
 {
     /* Detect ZBD and get info*/
     struct zbc_device_info dev_info;
-    int ret = zbc_device_is_zoned(zbd_path, true, &dev_info);
+    int ret = zbc_device_is_zoned(config_dev_zbd, true, &dev_info);
 
     if(ret == 1){
-        printf("Zone Block Device %s:\n", zbd_path);
+        printf("Zone Block Device %s:\n", config_dev_zbd);
         zbc_print_device_info(&dev_info, stdout);
         DASHHH;
     } else if(ret == 0){
-        printf("%s is not a zoned block device\n", zbd_path);
+        printf("%s is not a zoned block device\n", config_dev_zbd);
         return ret; 
     } else
     {
         fprintf(stderr, 
                 "The given device detect failed %s: %d, %s\n", 
-                zbd_path, ret, strerror(-ret));
+                config_dev_zbd, ret, strerror(-ret));
         exit(EXIT_FAILURE);
     }
 
 /* Open ZBD */
     //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-    ret = zbd_open(zbd_path, O_RDWR | O_DIRECT , &STT.ZBD);
+    ret = zbd_open(config_dev_zbd, O_RDWR | O_DIRECT , &STT.ZBD);
 
     if(ret < 0){
         log_err_sac("Open ZBD failed.\n");
