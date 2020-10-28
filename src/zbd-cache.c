@@ -256,10 +256,10 @@ int write_block(uint64_t blkoff, void *buf)
 void CacheLayer_Init()
 {
     if((DEV_CACHE = open(config_dev_cache, O_RDWR | O_DIRECT)) < 0){
-        log_err_sac("Unable to open CACHE device file: %s", config_dev_cache);
+        log_err_sac("Unable to open CACHE device file: %s\n", config_dev_cache);
         exit(-1);
     }
-    
+
     int r_init_cachepages = init_cache_pages();
     int r_init_hashtb = HashTab_crt(STT.n_cache_pages, &hashtb_cblk); 
 
@@ -632,7 +632,7 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
             uint32_t bufoff = pos * BLKSIZE;
             ret = pread_cache(zonebuf + bufoff, tg_page, 1);
             if(ret <= 0){
-                log_err_sac("load block from cache failed, page[%d].\n", tg_page);
+                log_err_sac("load block from cache failed, page[%d], error :%s.\n", tg_page, strerror(-ret));
             }
 
             /* clean page metadata: bit, hashtable, page status, STT. (just for demo) */
