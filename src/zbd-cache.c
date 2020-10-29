@@ -259,6 +259,8 @@ void CacheLayer_Init()
         exit(-1);
     }
 
+    log_info_sac("[Cache Device] path:%s, fd:%d\n", config_dev_cache, DEV_CACHE);
+
     int r_init_cachepages = init_cache_pages();
     int r_init_hashtb = HashTab_crt(STT.n_cache_pages, &hashtb_cblk); 
 
