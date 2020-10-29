@@ -23,7 +23,7 @@
 #   define N_SEQ_ZONES 36878
 #endif
 
-//#define NO_REAL_DISK_IO 
+#define NO_REAL_DISK_IO 
 
 #define DEBUG
 #ifdef DEBUG
@@ -31,7 +31,7 @@
 #endif
 
 static char config_dev_zbd[] = "/dev/sdc";
-static char config_dev_cache[] = "/mnt/ssd/test"; //"/dev/nvme0n1";// ; //; //"/mnt/cache/raw"; 
+static char config_dev_cache[] = "/mnt/SSD/raw"; //"/dev/nvme0n1";// ; //; //"/mnt/cache/raw"; 
 
 
 #endif
