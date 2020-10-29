@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 
-
+/* GLOBAL */
 #ifndef ZBD_GENERAL
 #define ZBD_GENERAL
 #   define SECSIZE 512
@@ -30,8 +30,20 @@
 # define DEBUG_CARS
 #endif
 
+/* TEST DEVICE */
 static char config_dev_zbd[] = "/dev/sdc";
 static char config_dev_cache[] = "/mnt/SSD/raw"; //"/dev/nvme0n1";// ; //; //"/mnt/cache/raw"; 
+
+//#define ZBD_DRIVE_EMU
+#ifdef ZBD_DRIVE_EMU
+#   define ZBD_OFLAG ZBC_O_DRV_FAKE
+#else
+#   define ZBD_OFLAG 0
+#endif
+
+
+/* ALOGORITHM RELATED */
+static float SMR_USEC_PER_READ = 14000;
 
 
 #endif
