@@ -55,12 +55,12 @@ extern struct zbd_zone *zones_collection;
 **** Interface for workload *****
 *********************************/
 extern void CacheLayer_Init();
+extern int CacheLayer_Uninstall();
 
 extern int read_block(uint64_t blkoff, void *buf);
 
 extern int write_block(uint64_t blkoff, void *buf);
 
-extern int CacheLayer_Uninstall();
 
 struct RuntimeSTAT{
     /** This user basic info */

@@ -1,10 +1,9 @@
 #define _GNU_SOURCE
-
+#include <unistd.h> //pread pwrite
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <memory.h>
-#include <unistd.h> //pread pwrite
 #include <linux/types.h>
 #include <fcntl.h>
 
@@ -52,7 +51,7 @@ struct cache_runtime cache_rt = {
 
 struct zbd_zone *zones_collection;
 
-static void* buf_rmw; // private buffer used to RMW. Note that, this only for single thread version. 
+static void* BUF_RMW; // private buffer used to RMW. Note that, this only for single thread version. 
 
 
 /* If Defined R/W Cache Space Static Allocated */
@@ -301,6 +300,8 @@ void CacheLayer_Init()
 
 int CacheLayer_Uninstall()
 {
+    fclose(f_log);
+    return 0;
 }
 
 static int
@@ -339,8 +340,8 @@ init_cache_pages()
     }
 
     /* init buffer for RMW */
-    buf_rmw = malloc(ZONESIZE);
-    if(!buf_rmw)
+    int r = posix_memalign(&BUF_RMW, SECSIZE, ZONESIZE);
+    if(r < 0 || !BUF_RMW)
         return -1;
     return 0;
 }
@@ -519,7 +520,6 @@ static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
     uint64_t offset = blkoff * BLKSIZE, 
              nbytes = blkcnt * BLKSIZE;
 
-    
     Lap(&tv_start);
     int ret = pread(DEV_CACHE, buf, nbytes, offset);
     Lap(&tv_stop);
@@ -591,7 +591,7 @@ static inline int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64
 
 static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap){
     int ret;
-    uint64_t tg_zone = zoneId * N_ZONEBLK;
+    uint64_t tg_zone_blkoff = zoneId * N_ZONEBLK;
     struct zbd_zone * tg_zone_meta = zones_collection + zoneId;
 
     uint64_t tg_blk;
@@ -623,7 +623,7 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
             if((*word & (1UL << i)) == 0) {continue;} // block not cached
 
             // target is in cache. and load it from cache layer. 
-            tg_blk = tg_zone + pos;
+            tg_blk = tg_zone_blkoff + pos;
             ret = HashTab_Lookup(hashtb_cblk, tg_blk, &tg_page);
             if(ret < 0){
                 log_err_sac("inconsistent bitmap with hashtable.\n");
@@ -660,7 +660,7 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     struct zbd_zone *tg_zone = zones_collection + zoneId;
 
     /* Read blocks from ZBD refered to Bitmap*/
-    ret = zbd_partread_by_bitmap(zoneId, buf_rmw, from_blk, to_blk, tg_zone->bitmap);
+    ret = zbd_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
     if(ret < 0){
         log_err_sac("[%s] Fail to read zone [%d] by Bitmap. \n", __func__, zoneId);
         exit(-1);
@@ -668,7 +668,7 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     
     /* Modify */
     // load dirty pages from cache device
-    ret = cache_partread_by_bitmap(zoneId, buf_rmw, from_blk, to_blk, tg_zone->bitmap);
+    ret = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
     if(ret < 0){
         log_err_sac("[%s] Fail to read cache by Bitmap. \n", __func__ );
         exit(-1);
@@ -682,7 +682,7 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     }
 
     /* Write-Back */
-    ssize_t scope = zbd_write_zone(STT.ZBD, buf_rmw, 0, zoneId, from_blk, to_blk - from_blk + 1);
+    ssize_t scope = zbd_write_zone(STT.ZBD, BUF_RMW, 0, zoneId, from_blk, to_blk - from_blk + 1);
 
     if(scope < 0){
         log_err_sac("[%s] Fail to Write Zone [%d]. \n", __func__, zoneId);
