@@ -33,7 +33,7 @@ struct most_lru {
     struct cache_page *head, *tail;
 };  // 该结构体用于 (struct zbd_zone *) zone 的 priv字段来表示写block的LRU链表；和用于全局读block的LRU链表。
 
-static struct most_lru LRU_r = {NULL, NULL}; // 全局读block的LRU链表
+static struct most_lru LRU_READ_GLOBAL = {NULL, NULL}; // 全局读block的LRU链表
 
 /* lru Utils */
 static inline void lru_insert(struct cache_page *page, int op);
@@ -55,10 +55,16 @@ int most_init()
             return -1;
     }
 
+    struct zbd_zone *z = zones_collection;
+    for(int i = 0; i < N_ZONES; i++, z++){
+        z->priv = calloc(1, sizeof(struct most_lru));
+    }
+
     window = STT.n_cache_pages;
 
     return 0;
 }
+
 
 int most_login(struct cache_page *page, int op)
 {   
@@ -100,27 +106,27 @@ int most_writeback_privi()
     Stamp_OOD = Stamp_GLOBAL - window; //Stamp_GLOBAL - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
 
     int ret, cnt = 0;
-    struct cache_page *page = LRU_r.tail;
-    struct cache_page *next_page = NULL;
+    struct cache_page *page_r = LRU_READ_GLOBAL.tail;
+    struct cache_page *next = NULL;
     struct page_payload *payload;
-    while (page && cnt < 128)
+    while (page_r && cnt < 1024)
     {
-        payload = (struct page_payload *)page->priv;
+        payload = (struct page_payload *)page_r->priv;
         if(payload->stamp > Stamp_OOD){
             break;
         }
 
-        next_page = payload->lru_r_pre;
+        next = payload->lru_r_pre;
 
-        if((page->status & FOR_WRITE) == 0){
+        if((page_r->status & FOR_WRITE) == 0){
             // not a dirty block
-            Page_force_drop(page);
+            Page_force_drop(page_r);
             cnt++;
         }
-        page = next_page;
+        page_r = next;
     }
 
-    if(cnt == 128)
+    if(cnt == 1024)
         return 0;
     
     ret = most_get_zone_out();
@@ -133,27 +139,27 @@ static int most_get_zone_out()
     uint32_t from = 0, to = N_ZONEBLK - 1;
     float best_arsc = 0;   // arsc = 1 / most = ood_blks / rmw_length .   {0< arsc <= 1}
     int blks_ars = 0;
+
     // Traverse every zone. 
-    struct zbd_zone *zone = zones_collection;
-    for(int i = 0; i < N_ZONES; i++, zone++)
+    struct zbd_zone *z = zones_collection;
+    for(int i = 0; i < N_ZONES; i++, z++)
     {
+        struct most_lru * zone_lru = (struct most_lru *)z->priv;
+        if(zone_lru->head == NULL) { continue; }
+
+        
         uint32_t blkoff_min = N_ZONEBLK - 1;
         float zone_arsc;
 
-        struct most_lru * zone_lru = (struct most_lru *)zone->priv;
-        if(zone_lru == NULL) {
-            continue;
-        }
 
         // Traverse every page in zone. 获取zone内最小blkoff的ARS block
+        
         int n_blks_ood = 0;
         struct cache_page *page = zone_lru->tail;
         struct page_payload *payload;
         while(page)
         {
             payload = (struct page_payload *)page->priv;
-
-
             n_blks_ood ++;
             blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
 
@@ -164,7 +170,7 @@ static int most_get_zone_out()
 
         zone_arsc = (float)n_blks_ood;// / (N_ZONEBLK - blkoff_min);
         if(zone_arsc > best_arsc){
-            best_zoneId = zone->zoneId;
+            best_zoneId = z->zoneId;
             best_arsc = zone_arsc;
             from = blkoff_min;
             blks_ars = n_blks_ood;
@@ -184,8 +190,6 @@ static int most_get_zone_out()
 static inline void lru_insert(struct cache_page *page, int op)
 {
     struct zbd_zone *zone = zones_collection + page->belong_zoneId;
-    if(zone->priv == NULL)
-        zone->priv = calloc(1, sizeof(struct most_lru));
 
     struct most_lru * zone_lru = (struct most_lru *)zone->priv;
     struct page_payload *payload = (struct page_payload *)page->priv;
@@ -220,20 +224,20 @@ static inline void lru_insert(struct cache_page *page, int op)
     
     if (op & FOR_READ) {
 
-        if (LRU_r.head == NULL)
+        if (LRU_READ_GLOBAL.head == NULL)
         {
-            LRU_r.head = page;
-            LRU_r.tail = page;
+            LRU_READ_GLOBAL.head = page;
+            LRU_READ_GLOBAL.tail = page;
         }
         else
         {
-            struct page_payload *header_payload = (struct page_payload *)LRU_r.head->priv;
+            struct page_payload *header_payload = (struct page_payload *)LRU_READ_GLOBAL.head->priv;
 
             payload->lru_r_pre = NULL;
-            payload->lru_r_next = LRU_r.head;
+            payload->lru_r_next = LRU_READ_GLOBAL.head;
 
             header_payload->lru_r_pre = page;
-            LRU_r.head = page;
+            LRU_READ_GLOBAL.head = page;
         }       
     }
 
@@ -277,7 +281,7 @@ static inline void lru_remove(struct cache_page *page, int op)
              payload_pre->lru_r_next = payload_this->lru_r_next;
         } else 
         {
-            LRU_r.head = payload_this->lru_r_next;
+            LRU_READ_GLOBAL.head = payload_this->lru_r_next;
         }
         
         if(payload_this->lru_r_next)
@@ -286,7 +290,7 @@ static inline void lru_remove(struct cache_page *page, int op)
              payload_next->lru_r_pre = payload_this->lru_r_pre;
         } else 
         {
-            LRU_r.tail = payload_this->lru_r_pre;
+            LRU_READ_GLOBAL.tail = payload_this->lru_r_pre;
         }
         
         payload_this->lru_r_pre = payload_this->lru_r_next = NULL;

@@ -33,7 +33,7 @@ struct cars_lru {
     struct cache_page *head, *tail;
 };  // 该结构体用于 (struct zbd_zone *) zone 的 priv字段来表示写block的LRU链表；和用于全局读block的LRU链表。
 
-struct cars_lru LRU_r = {NULL, NULL}; // 全局读block的LRU链表
+struct cars_lru LRU_READ_GLOBAL = {NULL, NULL}; // 全局读block的LRU链表
 
 /* lru Utils */
 static inline void lru_insert(struct cache_page *page, int op);
@@ -53,6 +53,11 @@ int cars_init()
         page->priv = calloc(1, sizeof(struct page_payload));
         if(!page->priv)
             return -1;
+    }
+    
+    struct zbd_zone *z = zones_collection;
+    for(int i = 0; i < N_ZONES; i++, z++){
+        z->priv = calloc(1, sizeof(struct cars_lru));
     }
 
     window = STT.n_cache_pages;
@@ -104,7 +109,7 @@ int cars_writeback_privi()
     struct page_payload *payload;
 
 EVICT_READ_BLKS:
-    page = LRU_r.tail;
+    page = LRU_READ_GLOBAL.tail;
     while (page && cnt < 1024)
     {
         payload = (struct page_payload *)page->priv;
@@ -172,14 +177,12 @@ static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to
     struct zbd_zone *zone = zones_collection;
     for(int i = 0; i < N_ZONES; i++, zone++)
     {
+        struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;
+        if(zone_lru->head == NULL) { continue; }
+
         uint32_t blkoff_min = N_ZONEBLK - 1;
         uint32_t blkoff_min_most = N_ZONEBLK - 1;
         float zone_arsc;
-
-        struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;
-        if(zone_lru == NULL) {
-            continue;
-        }
 
         // Traverse every page in zone. 获取zone内最小blkoff的ARS block
         uint32_t n_blks_ood = 0;
@@ -227,8 +230,6 @@ static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to
 static inline void lru_insert(struct cache_page *page, int op)
 {
     struct zbd_zone *zone = zones_collection + page->belong_zoneId;
-    if(zone->priv == NULL)
-        zone->priv = calloc(1, sizeof(struct cars_lru));
 
     struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;
     struct page_payload *payload = (struct page_payload *)page->priv;
@@ -263,20 +264,20 @@ static inline void lru_insert(struct cache_page *page, int op)
     
     if (op & FOR_READ) {
 
-        if (LRU_r.head == NULL)
+        if (LRU_READ_GLOBAL.head == NULL)
         {
-            LRU_r.head = page;
-            LRU_r.tail = page;
+            LRU_READ_GLOBAL.head = page;
+            LRU_READ_GLOBAL.tail = page;
         }
         else
         {
-            struct page_payload *header_payload = (struct page_payload *)LRU_r.head->priv;
+            struct page_payload *header_payload = (struct page_payload *)LRU_READ_GLOBAL.head->priv;
 
             payload->lru_r_pre = NULL;
-            payload->lru_r_next = LRU_r.head;
+            payload->lru_r_next = LRU_READ_GLOBAL.head;
 
             header_payload->lru_r_pre = page;
-            LRU_r.head = page;
+            LRU_READ_GLOBAL.head = page;
         }       
     }
 
@@ -320,7 +321,7 @@ static inline void lru_remove(struct cache_page *page, int op)
              payload_pre->lru_r_next = payload_this->lru_r_next;
         } else 
         {
-            LRU_r.head = payload_this->lru_r_next;
+            LRU_READ_GLOBAL.head = payload_this->lru_r_next;
         }
         
         if(payload_this->lru_r_next)
@@ -329,7 +330,7 @@ static inline void lru_remove(struct cache_page *page, int op)
              payload_next->lru_r_pre = payload_this->lru_r_pre;
         } else 
         {
-            LRU_r.tail = payload_this->lru_r_pre;
+            LRU_READ_GLOBAL.tail = payload_this->lru_r_pre;
         }
         
         payload_this->lru_r_pre = payload_this->lru_r_next = NULL;
