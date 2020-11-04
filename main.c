@@ -116,7 +116,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 40000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
