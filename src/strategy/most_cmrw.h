@@ -14,4 +14,5 @@ extern int most_cmrw_logout(struct cache_page *page, int op);
 
 extern int most_cmrw_writeback_privi();
 
+
 #endif

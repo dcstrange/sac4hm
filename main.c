@@ -393,6 +393,8 @@ int analyze_opts(int argc, char **argv)
                 STT.op_algorithm = ALG_CARS;
             else if (strcmp(optarg, "MOST") == 0)
                 STT.op_algorithm = ALG_MOST;
+            else if (strcmp(optarg, "MOST-CMRW"))
+                STT.op_algorithm = ALG_MOST_CMRW;
             else
                 STT.op_algorithm = ALG_UNKNOWN;
 

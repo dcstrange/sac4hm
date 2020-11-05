@@ -272,7 +272,6 @@ void CacheLayer_Init()
             algorithm.logout = cars_logout;
             algorithm.hit = cars_hit;
             algorithm.GC_privillege = cars_writeback_privi;
-            algorithm.flush_all_cache = cars_flush_allcache;
             break;
         case ALG_MOST:
             algorithm.init = most_init;
@@ -281,6 +280,12 @@ void CacheLayer_Init()
             algorithm.hit = most_hit;
             algorithm.GC_privillege = most_writeback_privi;
             break;
+        case ALG_MOST_CMRW:
+            algorithm.init = most_cmrw_init;
+            algorithm.login = most_cmrw_login;
+            algorithm.logout = most_cmrw_logout;
+            algorithm.hit = most_cmrw_hit;
+            algorithm.GC_privillege = most_cmrw_writeback_privi;
         case ALG_UNKNOWN:
             log_err_sac("[error]func:%s, unknown algorithm. \n");
             exit(-1);

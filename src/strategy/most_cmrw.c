@@ -6,6 +6,7 @@
 #include "zbd-cache.h"
 #include "log.h"
 
+#include "algorithms-general.h"
 
 /* zbd-cache.h */
 struct cache_page;
@@ -103,34 +104,72 @@ int most_cmrw_hit(struct cache_page *page, int op)
 
 int most_cmrw_writeback_privi()
 {
-    Stamp_OOD = Stamp_GLOBAL - window; //Stamp_GLOBAL - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
-
+    Stamp_OOD = Stamp_GLOBAL - window; // // 不是好的方法。是没有依据的人工参数。
+    //Stamp_OOD = Stamp_GLOBAL - STT.hitnum_s;
     int ret, cnt = 0;
-    struct cache_page *page_r = LRU_READ_GLOBAL.tail;
-    struct cache_page *next = NULL;
+    struct cache_page *page;
+    struct cache_page *next_page = NULL;
     struct page_payload *payload;
-    while (page_r && cnt < 1024)
+
+EVICT_READ_BLKS:
+    page = LRU_READ_GLOBAL.tail;
+    while (page && cnt < 1024)
     {
-        payload = (struct page_payload *)page_r->priv;
+        payload = (struct page_payload *)page->priv;
         if(payload->stamp > Stamp_OOD){
             break;
         }
 
-        next = payload->lru_r_pre;
+        next_page = payload->lru_r_pre;
 
-        if((page_r->status & FOR_WRITE) == 0){
+        if((page->status & FOR_WRITE) == 0){
             // not a dirty block
-            Page_force_drop(page_r);
+            Page_force_drop(page);
             cnt++;
         }
-        page_r = next;
+        page = next_page;
+    }
+    
+    if(cnt){
+        log_info_sac("[cars] evict read cache pages count: %d\n",cnt);
+        return cnt;
     }
 
-    if(cnt == 1024)
-        return 0;
-    
-    ret = most_get_zone_out();
-    return ret;
+    // 如果没有ARS read blks，则淘汰ARS write blks
+    int zoneId;
+    uint32_t zblk_from, zblk_to, zblks_ars;
+    ret = most_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
+
+    if(ret >= 0)
+    {   
+        log_info_sac("[cars] Eviction status code: 2\n"); 
+        goto EVICT_ZONE; 
+    }
+
+    // 如果 read blocks和 write blocks都没有ARS，那么采用单位淘汰块的时间代价打分。
+    log_info_sac("[cars] Eviction status code: 3\n"); 
+    Stamp_OOD = Stamp_GLOBAL; // 设置ood时间戳=当前全局时间戳。这假定了所有cache blocks都是过期的（冷的）。
+    ret = most_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
+    if(STT.cpages_r == 0)
+    { goto EVICT_ZONE;}
+
+    float cost_per_w = msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
+    float cost_per_r = msec_SMR_read;
+
+
+    log_info_sac("[cars] CostModel r/w: %.0f:%.0f\n", cost_per_r, cost_per_w); 
+    if(cost_per_r > cost_per_w)
+    { 
+        goto EVICT_ZONE; 
+    } 
+    else 
+    {
+        Stamp_OOD = Stamp_GLOBAL; 
+        goto EVICT_READ_BLKS;
+    }
+
+EVICT_ZONE:
+        return RMW(zoneId, zblk_from, zblk_to);
 }
 
 static int most_get_zone_out()
@@ -152,8 +191,7 @@ static int most_get_zone_out()
         float zone_arsc;
 
 
-        // Traverse every page in zone. 获取zone内最小blkoff的ARS block
-        
+        // Traverse every page in zone. 
         int n_blks_ood = 0;
         struct cache_page *page = zone_lru->tail;
         struct page_payload *payload;

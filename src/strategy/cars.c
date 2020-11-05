@@ -5,7 +5,8 @@
 
 #include "zbd-cache.h"
 #include "log.h"
-#include "cars.h"
+
+#include "algorithms-general.h"
 
 /* zbd-cache.h */
 struct cache_page;
