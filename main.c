@@ -51,7 +51,13 @@ const char *tracefile[] = {
     "./traces/usr_0.csv.req",
     "./traces/web_0.csv.req",
    // "./traces/production-LiveMap-Backend-4K.req", // --> not in used.
-    "./traces/long.csv.req"                           // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
+    "./traces/long.csv.req.full",                       // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
+    "./traces/LUN0.txt",
+    "./traces/LUN1.txt",
+    "./traces/LUN2.txt",
+    "./traces/LUN3.txt",
+    "./traces/LUN4.txt",
+    "./traces/LUN6.txt",
 };
     
 

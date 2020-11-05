@@ -61,7 +61,7 @@ int cars_init()
         z->priv = calloc(1, sizeof(struct cars_lru));
     }
 
-    window = STT.n_cache_pages;
+    window = STT.n_cache_pages * 2;
     return 0;
 }
 

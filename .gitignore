@@ -1,5 +1,7 @@
 *.log
 *.req
 *.o
+*.txt
+*.full
 .vscode/
 test
