@@ -299,7 +299,7 @@ void CacheLayer_Init()
     printf("r_init_cachepages: %d, r_init_hashtb: %d, r_init_algorithm: %d\n",
            r_init_cachepages, r_init_hashtb, r_init_algorithm);
 
-    f_log = fopen("./log/test.log","w+");
+    //f_log = fopen("./log/test.log","w+");
     if (r_init_cachepages == -1 || r_init_hashtb == -1 || r_init_algorithm == -1)
         exit(EXIT_FAILURE);
 
@@ -307,7 +307,7 @@ void CacheLayer_Init()
 
 int CacheLayer_Uninstall()
 {
-    fclose(f_log);
+    //fclose(f_log);
     return 0;
 }
 
@@ -704,9 +704,9 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
 
     log_info_sac("finish.\n");
 
-    static char buf_log[256];
-    sprintf(buf_log, "%ld, %.2f\n", scope, secs);
-    log_write_sac(f_log, buf_log);
+//    static char buf_log[256];
+//    sprintf(buf_log, "%ld, %.2f\n", scope, secs);
+//    log_write_sac(f_log, buf_log);
     return ret;
 }
 

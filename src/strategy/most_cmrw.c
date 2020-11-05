@@ -43,7 +43,7 @@ static inline void lru_move(struct cache_page *page, int op);
 static inline void lru_top(struct cache_page *page, int op);
 
 /* cache out */
-static int most_get_zone_out();
+static int most_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to, uint32_t *zblks_ars);
 
 int most_cmrw_init()
 {
@@ -61,7 +61,7 @@ int most_cmrw_init()
         z->priv = calloc(1, sizeof(struct most_lru));
     }
 
-    window = STT.n_cache_pages;
+    window = STT.n_cache_pages * 2;
 
     return 0;
 }
@@ -172,7 +172,7 @@ EVICT_ZONE:
         return RMW(zoneId, zblk_from, zblk_to);
 }
 
-static int most_get_zone_out()
+static int most_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to, uint32_t *zblks_ars)
 {
     int best_zoneId = -1;
     uint32_t from = 0, to = N_ZONEBLK - 1;
@@ -215,7 +215,10 @@ static int most_get_zone_out()
         }
     }
 
-    RMW(best_zoneId, from, to);
+    *zoneId = best_zoneId;
+    *zblk_from = from;
+    *zblk_to = to;
+    *zblks_ars = blks_ars;
 
     return best_zoneId;
 }

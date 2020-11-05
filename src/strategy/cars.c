@@ -151,11 +151,11 @@ EVICT_READ_BLKS:
     if(STT.cpages_r == 0)
     { goto EVICT_ZONE;}
 
-    float cost_per_w = msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
+    float cost_per_w = (float)msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
     float cost_per_r = msec_SMR_read;
 
 
-    log_info_sac("[cars] CostModel r/w: %.0f:%.0f\n", cost_per_r, cost_per_w); 
+    log_info_sac("[cars] CostModel r/w: %.1f:%.1f\n", cost_per_r, cost_per_w); 
     if(cost_per_r > cost_per_w)
     { 
         goto EVICT_ZONE; 
