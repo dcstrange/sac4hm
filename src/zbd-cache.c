@@ -286,6 +286,7 @@ void CacheLayer_Init()
             algorithm.logout = most_cmrw_logout;
             algorithm.hit = most_cmrw_hit;
             algorithm.GC_privillege = most_cmrw_writeback_privi;
+            break;
         case ALG_UNKNOWN:
             log_err_sac("[error]func:%s, unknown algorithm. \n");
             exit(-1);
