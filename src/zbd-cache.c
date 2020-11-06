@@ -532,6 +532,10 @@ static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
     int ret = pread(DEV_CACHE, buf, nbytes, offset);
     Lap(&tv_stop);
 
+    double secs = TimerInterval_seconds(&tv_start, &tv_stop);
+    STT.time_cache_r += secs;
+    STT.time_cache_s += secs;
+
     return ret;
 }
 
@@ -547,6 +551,10 @@ static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
     Lap(&tv_start);
     int ret = pwrite(DEV_CACHE, buf, nbytes, offset);
     Lap(&tv_stop);
+
+    double secs = TimerInterval_seconds(&tv_start, &tv_stop);
+    STT.time_cache_w += secs;
+    STT.time_cache_s += secs;
 
     return ret;
 }
