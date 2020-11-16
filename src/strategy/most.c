@@ -66,7 +66,6 @@ int most_init()
     return 0;
 }
 
-
 int most_login(struct cache_page *page, int op)
 {   
     lru_insert(page, op);
@@ -102,21 +101,26 @@ int most_hit(struct cache_page *page, int op)
     return 0;
 }
 
-int most_writeback_privi()
+int most_writeback_privi(int type)
 {
-    Stamp_OOD = Stamp_GLOBAL - window; //Stamp_GLOBAL - STT.hitnum_s; // 不是好的方法。是没有依据的人工参数。
-
     int ret, cnt = 0;
     struct cache_page *page_r = LRU_READ_GLOBAL.tail;
     struct cache_page *next = NULL;
     struct page_payload *payload;
+
+    if(type == FOR_READ)
+        goto EVICT_CLEAN;
+    else if(type == FOR_WRITE)
+        goto EVICT_DIRTY;
+    else {
+        log_err_sac("[%s] error: MOST cache algorithm needs to be told eviction page type. \n", __func__ );
+        exit(EXIT_FAILURE);
+    }
+    
+EVICT_CLEAN:
     while (page_r && cnt < 1024)
     {
         payload = (struct page_payload *)page_r->priv;
-        if(payload->stamp > Stamp_OOD){
-            break;
-        }
-
         next = payload->lru_r_pre;
 
         if((page_r->status & FOR_WRITE) == 0){
@@ -129,7 +133,8 @@ int most_writeback_privi()
 
     if(cnt == 1024)
         return 0;
-    
+
+EVICT_DIRTY:
     ret = most_get_zone_out();
     return ret;
 }
@@ -138,7 +143,7 @@ static int most_get_zone_out()
 {
     int best_zoneId = -1;
     uint32_t from = 0, to = N_ZONEBLK - 1;
-    float best_arsc = 0;   // arsc = 1 / most = ood_blks / rmw_length .   {0< arsc <= 1}
+    uint32_t cpages_most = 0; 
     int blks_ars = 0;
 
     // Traverse every zone. 
@@ -149,8 +154,8 @@ static int most_get_zone_out()
         if(zone_lru->head == NULL) { continue; }
 
         
-        uint32_t blkoff_min = N_ZONEBLK - 1;
-        float zone_arsc;
+        uint32_t blkoff_min = 0;
+        uint32_t zone_cpages;
 
 
         // Traverse every page in zone. 获取zone内最小blkoff的ARS block
@@ -162,17 +167,18 @@ static int most_get_zone_out()
         {
             payload = (struct page_payload *)page->priv;
             n_blks_ood ++;
-            blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
+            //blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
 
             page = payload->lru_w_pre;
         }
 
-        if(!STT.isPart) { blkoff_min = 0; }
+        //if(!STT.isPart) { blkoff_min = 0; }
 
-        zone_arsc = (float)n_blks_ood;// / (N_ZONEBLK - blkoff_min);
-        if(zone_arsc > best_arsc){
+        zone_cpages = n_blks_ood;// / (N_ZONEBLK - blkoff_min);
+        if(zone_cpages > cpages_most){
+            cpages_most = zone_cpages;
+
             best_zoneId = z->zoneId;
-            best_arsc = zone_arsc;
             from = blkoff_min;
             blks_ars = n_blks_ood;
         }
@@ -180,11 +186,13 @@ static int most_get_zone_out()
 
     RMW(best_zoneId, from, to);
 
+    // output write amplification.
+    uint32_t rmw_scope = N_ZONEBLK;
+    double wa = (double)rmw_scope / cpages_most;
+    log_info_sac("[%s] WA: %.2f (%u/%u)\n", __func__, wa, rmw_scope, cpages_most);
+
     return best_zoneId;
 }
-
-
-
 
 
 /* lru Utils */

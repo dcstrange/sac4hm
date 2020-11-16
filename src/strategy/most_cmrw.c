@@ -102,7 +102,7 @@ int most_cmrw_hit(struct cache_page *page, int op)
     return 0;
 }
 
-int most_cmrw_writeback_privi()
+int most_cmrw_writeback_privi(int type)
 {
     Stamp_OOD = Stamp_GLOBAL - window; // // 不是好的方法。是没有依据的人工参数。
     //Stamp_OOD = Stamp_GLOBAL - STT.hitnum_s;

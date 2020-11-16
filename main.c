@@ -31,7 +31,7 @@ int test_zbd();
 
 #define ACT_READ 0x00
 #define ACT_WRITE 0x01
-void trace_to_iocall();
+void trace_to_iocall(FILE *trace);
 static void reportSTT();
 static void reportSTT_brief();
 static void  resetSTT();
@@ -128,8 +128,15 @@ void trace_to_iocall(FILE *trace)
 
 
     if(posix_memalign((void**)&data, BLKSIZE, ZONESIZE) < 0) {exit(-1);}
-    for (int i = 0; i < 16 * BLKSIZE; i++) {data[i] = '1';}
-
+    //for (int i = 0; i < 16 * BLKSIZE; i++) {data[i] = '1';}
+    size_t cnt;
+    if((cnt = fread(data, sizeof(char), 16*BLKSIZE, trace)) == 0)
+    {
+        log_err_sac("[%s] initiate data buffer error: %d\n", __func__, cnt);
+    }
+    if(ret = fseek(trace, 0, SEEK_SET) < 0){
+        log_err_sac("[%s] initiate data buffer error: %d\n", __func__, cnt);
+    }
 
     log_info_sac("[Cache warming...]\n");
 
@@ -374,6 +381,7 @@ int analyze_opts(int argc, char **argv)
         {"cache-size", required_argument, NULL, 'c'},
         {"algorithm", required_argument, NULL, 'A'},
         {"rmw-part", required_argument, NULL, 'P'},
+        {"dirtycache-proportion", required_argument, NULL, 'D'},
         {"help", no_argument, NULL, 'h'},
         {0, 0, 0, 0}
     };
@@ -391,6 +399,7 @@ int analyze_opts(int argc, char **argv)
 
         uintmax_t n = 0;
         int invalid = 0;
+        double propotion = -1;
         switch (opt)
         {
 
@@ -429,7 +438,7 @@ int analyze_opts(int argc, char **argv)
                 printf("[rw]: read-write\n");
             }
             else{
-                printf("ERROR: unrecongnizd workload mode \"%s\", please assign mode [r]: read-only, [w]: write-only or [rw]: read-write.\n",
+                printf("PARAM ERROR: unrecongnizd workload mode \"%s\", please assign mode [r]: read-only, [w]: write-only or [rw]: read-write.\n",
                        optarg);
                 exit(-1);
                 }
@@ -451,10 +460,21 @@ int analyze_opts(int argc, char **argv)
             n = parse_integer(optarg, &invalid);
             if(invalid){
                 log_err_sac("invalid cache size number %s", optarg);
-                exit(-1);
+                exit(EXIT_FAILURE);
             }
             STT.n_cache_pages = n / BLKSIZE;
             printf("[User Setting] Cache Size = %s, pages = %lu.\n", optarg, STT.n_cache_pages);
+            break;
+        
+        case 'D':
+            propotion = atof(optarg);
+            if(!(propotion >= 0 && propotion <=1))
+            {
+                log_err_sac("PARAM ERROR: The dirty cache proportion must be 0<= x <= 1\n");
+                exit(EXIT_FAILURE);
+            }
+            STT.dirtycache_proportion = propotion;
+            STT.is_cache_partition = 1;
             break;
 
         case 'h':
@@ -475,6 +495,7 @@ int analyze_opts(int argc, char **argv)
                     \t--cache-size		Cache size: [size]{+M,G}. E.g. 32G. \n\
                     \t--offset		Start LBA offset of the SMR: [size]{+M,G}. E.g. 10G. \n\
                     \t--requests		Requst number you want to run: [Nunmber]. \n\
+                    \t--dirtycache-proportion  Set maximum dirty cache pages proportion, the value must 0<= x <= 1. Default is -1. \n\
                     \t--help          show this menu. \n\
                     ");
             exit(EXIT_SUCCESS);

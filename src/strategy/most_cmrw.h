@@ -12,7 +12,7 @@ extern int most_cmrw_login(struct cache_page *page, int op);
 extern int most_cmrw_hit(struct cache_page *page, int op);
 extern int most_cmrw_logout(struct cache_page *page, int op);
 
-extern int most_cmrw_writeback_privi();
+extern int most_cmrw_writeback_privi(int type);
 
 
 #endif

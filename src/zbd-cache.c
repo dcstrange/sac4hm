@@ -33,7 +33,7 @@ struct cache_algorithm {
     int (*login)(struct cache_page *page, int op);
     int (*logout)(struct cache_page *page, int op); 
     
-    int (*GC_privillege)();
+    int (*GC_privillege)(int type); // type 0 for any, 1 for read group, 2 for write group. default is 0;
     int (*flush_all_cache)();
 };
 
@@ -84,6 +84,8 @@ struct RuntimeSTAT STT =
     .n_cache_pages = 8000000, //default 32GB
     .op_algorithm = ALG_CARS,
     .isPart = 1,
+    .is_cache_partition = 0,
+    .dirtycache_proportion = -1,
 
     /* 1. Workload */
     .reqcnt_s = 0,
@@ -247,8 +249,6 @@ int write_block(uint64_t blkoff, void *buf)
     return ret;
 }
 
-
-
 /*
  * init buffer hash table, strategy_control, buffer, work_mem
  */
@@ -258,8 +258,15 @@ void CacheLayer_Init()
         log_err_sac("Unable to open CACHE device file: %s\n", config_dev_cache);
         exit(-1);
     }
-
     log_info_sac("[Cache Device] path:%s, fd:%d\n", config_dev_cache, DEV_CACHE);
+
+    if(STT.dirtycache_proportion >= 0)
+    {
+        STT.max_pages_w = (double)STT.n_cache_pages * STT.dirtycache_proportion;
+        STT.max_pages_r = STT.n_cache_pages - STT.max_pages_w;
+        log_info_sac("[Cache Partition] Static cache space partition for clean and dirty pages: %.1f/%.1f (clean/dirty)\n", 
+                        (1-STT.dirtycache_proportion), STT.dirtycache_proportion);
+    }
 
     int r_init_cachepages = init_cache_pages();
     int r_init_hashtb = HashTab_crt(STT.n_cache_pages, &hashtb_cblk); 
@@ -382,8 +389,14 @@ retrive_cache_page(uint64_t tg_blk, int op)
 static int 
 flush_zone_pages()
 {
+    int ptype = FOR_UNKNOWN;
+    if(STT.is_cache_partition)
+    {
+        ptype = (STT.cpages_w >= STT.max_pages_w) ? FOR_WRITE : FOR_READ;
+    }
+    
     // call algorithm to decide which zone to be flush
-    int ret = algorithm.GC_privillege();
+    int ret = algorithm.GC_privillege(ptype);
 
     return ret;
 }
@@ -605,8 +618,12 @@ static inline int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64
     return ret;
 }
 
+/*
+ @return: the cache pages count. 
+*/
 static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap){
     int ret;
+    uint32_t page_cnt = 0;
     uint64_t tg_zone_blkoff = zoneId * N_ZONEBLK;
     struct zbd_zone * tg_zone_meta = zones_collection + zoneId;
 
@@ -655,13 +672,15 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
             page = cache_rt.pages + tg_page;
             algorithm.logout(page, FOR_WRITE);
             try_recycle_page(page, FOR_WRITE); 
+
+            page_cnt ++;
             if(tg_zone_meta->cblks == 0)
                 return 0;
         }
         this_word ++;
         pos_from = 0;
     }
-    return 0;
+    return page_cnt;
 
 }
 
@@ -670,11 +689,10 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     int ret;
     struct timeval tv_start, tv_stop;
     log_info_sac("[%s] start r-m-w zone [%d] ... ", __func__, zoneId);
-
-    Lap(&tv_start);
-
+    
     struct zbd_zone *tg_zone = zones_collection + zoneId;
 
+    Lap(&tv_start);
     /* Read blocks from ZBD refered to Bitmap*/
     ret = zbd_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
     if(ret < 0){
@@ -704,9 +722,10 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
         log_err_sac("[%s] Fail to Write Zone [%d]. \n", __func__, zoneId);
         exit(-1);
     }
-    Lap(&tv_stop);
 
+    Lap(&tv_stop);
     double secs = TimerInterval_seconds(&tv_start, &tv_stop);
+    
     STT.time_zbd_rmw += secs;
     STT.rmw_times ++;
     STT.rmw_scope += scope;

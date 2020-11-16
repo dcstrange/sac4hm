@@ -7,6 +7,7 @@
 
 
 enum page_status {
+    FOR_UNKNOWN   = 0x00,
     FOR_READ      = 0x01,
     FOR_WRITE     = 0x02,
 };
@@ -74,6 +75,10 @@ struct RuntimeSTAT{
 
     int op_algorithm;
     int isPart;
+
+    int    is_cache_partition;
+    double dirtycache_proportion;
+
     /** Runtime strategy refered parameter **/
     //union StratetyUnion strategyRef;
 
@@ -106,6 +111,9 @@ struct RuntimeSTAT{
     double time_cache_s;
     double time_cache_r;
     double time_cache_w;
+
+    uint64_t max_pages_w,
+             max_pages_r;
 
     /* 3. ZBD */
     uint64_t rmw_scope;
