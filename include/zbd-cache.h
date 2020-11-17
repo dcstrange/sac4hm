@@ -18,6 +18,7 @@ enum algorthm_enum
     ALG_CARS    = 0x01,
     ALG_MOST    = 0x02,
     ALG_MOST_CMRW = 0x03,
+    ALG_LRUZONE = 0x04,
 };
 
 struct cache_page

@@ -111,9 +111,12 @@ int most_cmrw_writeback_privi(int type)
     struct cache_page *next_page = NULL;
     struct page_payload *payload;
 
+    int zoneId;
+    uint32_t zblk_from, zblk_to, zblks_ars;
+
 EVICT_READ_BLKS:
     page = LRU_READ_GLOBAL.tail;
-    while (page && cnt < 1024)
+    while (page && cnt < def_evt_pages_read)
     {
         payload = (struct page_payload *)page->priv;
         if(payload->stamp > Stamp_OOD){
@@ -129,35 +132,31 @@ EVICT_READ_BLKS:
         }
         page = next_page;
     }
-    
     if(cnt){
-        log_info_sac("[cars] evict read cache pages count: %d\n",cnt);
+        log_info_sac("[most-cmrw] evict read cache pages count: %d\n",cnt);
         return cnt;
     }
 
-    // 如果没有ARS read blks，则淘汰ARS write blks
-    int zoneId;
-    uint32_t zblk_from, zblk_to, zblks_ars;
-    ret = most_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
+    // 如果没有ARS read blks，则计算淘汰块的时间代价
+    log_info_sac("[cars] Eviction status code: 2\n"); 
 
-    if(ret >= 0)
+    while(1)
     {   
-        log_info_sac("[cars] Eviction status code: 2\n"); 
-        goto EVICT_ZONE; 
+        ret = most_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
+        if(ret >= 0)
+            break;
+
+        Stamp_OOD = Stamp_GLOBAL; //设置ood时间戳=当前全局时间戳。这假定了所有cache blocks都是过期的（冷的）。 退化成MOST。
+        log_info_sac("[cars] reset the timestamp.\n"); 
     }
 
-    // 如果 read blocks和 write blocks都没有ARS，那么采用单位淘汰块的时间代价打分。
-    log_info_sac("[cars] Eviction status code: 3\n"); 
-    Stamp_OOD = Stamp_GLOBAL; // 设置ood时间戳=当前全局时间戳。这假定了所有cache blocks都是过期的（冷的）。
-    ret = most_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
-    if(STT.cpages_r == 0)
-    { goto EVICT_ZONE;}
+    if(STT.cpages_r == 0) { goto EVICT_ZONE; }
+    
 
-    float cost_per_w = msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
-    float cost_per_r = msec_SMR_read;
-
-
-    log_info_sac("[cars] CostModel r/w: %.0f:%.0f\n", cost_per_r, cost_per_w); 
+    double cost_per_w = (double)msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
+    double cost_per_r = 1;//(double)STT.time_zbd_read * 1000 / STT.missnum_r;
+    log_info_sac("[cars] CostModel r/w: %.1f:%.1f\n", cost_per_r, cost_per_w); 
+    
     if(cost_per_r > cost_per_w)
     { 
         goto EVICT_ZONE; 
@@ -169,7 +168,14 @@ EVICT_READ_BLKS:
     }
 
 EVICT_ZONE:
-        return RMW(zoneId, zblk_from, zblk_to);
+    ret = RMW(zoneId, zblk_from, zblk_to);
+    
+    // output write amplification.
+    uint32_t rmw_scope = N_ZONEBLK - zblk_from;
+    double wa = (double)rmw_scope / zblks_ars;
+    log_info_sac("[%s] WA: %.2f (%u/%u)\n", __func__, wa, rmw_scope, zblks_ars);
+
+    return ret;
 }
 
 static int most_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to, uint32_t *zblks_ars)

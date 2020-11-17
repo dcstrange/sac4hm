@@ -83,7 +83,7 @@ struct RuntimeSTAT STT =
     .start_Blkoff = N_ZONEBLK * N_COV_ZONE,
     .n_cache_pages = 8000000, //default 32GB
     .op_algorithm = ALG_CARS,
-    .isPart = 1,
+    .isPart = 0,
     .is_cache_partition = 0,
     .dirtycache_proportion = -1,
 
@@ -294,6 +294,13 @@ void CacheLayer_Init()
             algorithm.hit = most_cmrw_hit;
             algorithm.GC_privillege = most_cmrw_writeback_privi;
             break;
+        case ALG_LRUZONE:
+            algorithm.init = lruzone_init;
+            algorithm.login = lruzone_login;
+            algorithm.logout = lruzone_logout;
+            algorithm.hit = lruzone_hit;
+            algorithm.GC_privillege = lruzone_writeback_privi;
+            break;
         case ALG_UNKNOWN:
             log_err_sac("[error]func:%s, unknown algorithm. \n");
             exit(-1);
@@ -486,31 +493,36 @@ static inline int init_page(struct cache_page *page, uint64_t blkoff, int op)
 
 static inline int try_recycle_page(struct cache_page *page, int op) 
 { 
-
-    int status = page->status;
-    if(!status) {
+    if(!page->status) {
         log_err_sac("[error] func:%s, can't double recycle page. \n", __func__);
         return -1;
     } 
 
-    page->status &=  (~op);
-    if(page->status) {   // still for read or write
+    int recycle_status = page->status & op;
+    if(!recycle_status)
         return 0;
-    } 
+
+    page->status &= (~op); // set page status
 
     /* STT */
-    if(status & FOR_READ){
+    if(recycle_status & FOR_READ){
         STT.cpages_r --;
         STT.gc_cpages_r ++ ;
-    } else if (status & FOR_WRITE) {
+    } 
+    if (recycle_status & FOR_WRITE) {
         STT.cpages_w --;
         STT.gc_cpages_w ++ ;
-    }
+    } 
+
+
+    if(page->status)
+        return 0; // still for read or write 
+
+    /* If the page has no other status left, then clean its metadata. */
     STT.cpages_s --;
     STT.gc_cpages_s ++;
-
-
-    /* zone metadata */
+    
+    // zone metadata 
     struct zbd_zone *zone = zones_collection + page->belong_zoneId;
     zone->cblks --;
     if(zone->cblks == 0){

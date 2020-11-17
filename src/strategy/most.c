@@ -110,7 +110,7 @@ int most_writeback_privi(int type)
 
     if(type == FOR_READ)
         goto EVICT_CLEAN;
-    else if(type == FOR_WRITE)
+    else if(type == FOR_WRITE || type == FOR_UNKNOWN)
         goto EVICT_DIRTY;
     else {
         log_err_sac("[%s] error: MOST cache algorithm needs to be told eviction page type. \n", __func__ );
