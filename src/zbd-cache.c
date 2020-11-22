@@ -309,7 +309,7 @@ void CacheLayer_Init()
             algorithm.GC_privillege = lruzone_writeback_privi;
             break;
         case ALG_UNKNOWN:
-            log_err_sac("[error]func:%s, unknown algorithm. \n");
+            log_err_sac("[error]func:%s, unknown algorithm. \n", __func__);
             exit(-1);
         default:
             break;
