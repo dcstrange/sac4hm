@@ -34,7 +34,7 @@ struct cars_lru {
     struct cache_page *head, *tail;
 };  // 该结构体用于 (struct zbd_zone *) zone 的 priv字段来表示写block的LRU链表；和用于全局读block的LRU链表。
 
-struct cars_lru LRU_READ_GLOBAL = {NULL, NULL}; // 全局读block的LRU链表
+static struct cars_lru LRU_READ_GLOBAL = {NULL, NULL}; // 全局读block的LRU链表
 
 /* lru Utils */
 static inline void lru_insert(struct cache_page *page, int op);
@@ -45,7 +45,7 @@ static inline void lru_top(struct cache_page *page, int op);
 /* cache out */
 static int cars_get_zone_out();
 
-int cars_init()
+int cars_prop_init()
 {
     /* init page priv field. */
     struct cache_page *page = cache_rt.pages;
@@ -65,7 +65,7 @@ int cars_init()
     return 0;
 }
 
-int cars_login(struct cache_page *page, int op)
+int cars_prop_login(struct cache_page *page, int op)
 {   
     lru_insert(page, op);
 
@@ -76,14 +76,14 @@ int cars_login(struct cache_page *page, int op)
     return 0;
 }
 
-int cars_logout(struct cache_page *page, int op)
+int cars_prop_logout(struct cache_page *page, int op)
 {   
     lru_remove(page, op);
     
     return 0;
 }
 
-int cars_hit(struct cache_page *page, int op)
+int cars_prop_hit(struct cache_page *page, int op)
 {
     struct page_payload *payload = (struct page_payload *)page->priv;
 
@@ -100,7 +100,7 @@ int cars_hit(struct cache_page *page, int op)
     return 0;
 }
 
-int cars_writeback_privi(int type)
+int cars_prop_writeback_privi(int type)
 {
     Stamp_OOD = Stamp_GLOBAL - window; // // 不是好的方法。是没有依据的人工参数。
     //Stamp_OOD = Stamp_GLOBAL - STT.hitnum_s;
@@ -112,15 +112,22 @@ int cars_writeback_privi(int type)
     int zoneId;
     uint32_t zblk_from, zblk_to, zblks_ars;
 
+    if (type == FOR_READ){
+        goto EVICT_READ_BLKS;
+    }
+    else if (type == FOR_WRITE){
+          goto EVICT_ZONE;
+    }
+    else{
+        log_err_sac("[%s] error: this cache algorithm needs to be told eviction page type. \n", __func__ );
+        exit(EXIT_FAILURE);
+    }
+    
 EVICT_READ_BLKS:
     page = LRU_READ_GLOBAL.tail;
     while (page && cnt < def_evt_pages_read)
     {
         payload = (struct page_payload *)page->priv;
-        if(payload->stamp > Stamp_OOD){
-            break;
-        }
-
         next_page = payload->lru_r_pre;
 
         if((page->status & FOR_WRITE) == 0){
@@ -135,9 +142,7 @@ EVICT_READ_BLKS:
         return cnt;
     }
 
-    // 如果没有ARS read blks，则计算淘汰块的时间代价
-    log_info_sac("[cars] Eviction status code: 2\n"); 
-
+EVICT_ZONE:
     while(1)
     {   
         ret = cars_get_zone_out(&zoneId, &zblk_from, &zblk_to, &zblks_ars);
@@ -148,24 +153,6 @@ EVICT_READ_BLKS:
         log_info_sac("[cars] reset the timestamp.\n"); 
     }
 
-    if(STT.cpages_r == 0) { goto EVICT_ZONE; }
-    
-
-    double cost_per_w = (double)msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
-    double cost_per_r = (double)STT.time_zbd_read * 1000 / STT.missnum_r;
-    log_info_sac("[cars] CostModel r/w: %.1f:%.1f\n", cost_per_r, cost_per_w); 
-    
-    if(cost_per_r > cost_per_w)
-    { 
-        goto EVICT_ZONE; 
-    } 
-    else 
-    {
-        Stamp_OOD = Stamp_GLOBAL; 
-        goto EVICT_READ_BLKS;
-    }
-
-EVICT_ZONE:
     ret = RMW(zoneId, zblk_from, zblk_to);
     
     // output write amplification.
@@ -176,7 +163,7 @@ EVICT_ZONE:
     return ret;
 }
 
-int cars_flush_allcache(){
+int cars_prop_flush_allcache(){
   
     return 0;
 }

@@ -280,6 +280,13 @@ void CacheLayer_Init()
             algorithm.hit = cars_hit;
             algorithm.GC_privillege = cars_writeback_privi;
             break;
+        case ALG_CARS_PROP:
+            algorithm.init = cars_prop_init;
+            algorithm.login = cars_prop_login;
+            algorithm.logout = cars_prop_logout;
+            algorithm.hit = cars_prop_hit;
+            algorithm.GC_privillege = cars_prop_writeback_privi;
+            break;
         case ALG_MOST:
             algorithm.init = most_init;
             algorithm.login = most_login;

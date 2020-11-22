@@ -406,6 +406,8 @@ int analyze_opts(int argc, char **argv)
         case 'A': // algorithm
             if (strcmp(optarg, "CARS") == 0)
                 STT.op_algorithm = ALG_CARS;
+            if (strcmp(optarg, "CARS-PROP") == 0)
+                STT.op_algorithm = ALG_CARS_PROP;
             else if (strcmp(optarg, "MOST") == 0)
                 STT.op_algorithm = ALG_MOST;
             else if (strcmp(optarg, "MOST-CMRW") == 0)

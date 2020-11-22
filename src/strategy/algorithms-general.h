@@ -2,6 +2,7 @@
 #define ALGORIRTHM_GEN_H
 
 #include "cars.h"
+#include "cars_cacheprop.h"
 #include "most.h"
 #include "most_cmrw.h"
 #include "lru_zone.h"
