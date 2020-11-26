@@ -60,7 +60,7 @@ int lruzone_init()
         z->priv = calloc(1, sizeof(struct most_lru));
     }
 
-    window = STT.n_cache_pages;
+    window = STT.n_cache_pages * 2;
 
     return 0;
 }
@@ -153,8 +153,8 @@ static int lruzone_get_zone_out()
         struct most_lru * zone_lru = (struct most_lru *)z->priv;
         if(zone_lru->head == NULL) { continue; }
 
-        // Traverse every page in zone. 获取zone内LRU tail page
-        struct cache_page *page = zone_lru->tail;
+        // 获取zone内LRU head page
+        struct cache_page *page = zone_lru->head;
         struct page_payload *payload = (struct page_payload *)page->priv;
         stamp = payload->stamp;
 
@@ -166,13 +166,38 @@ static int lruzone_get_zone_out()
         }
     }
 
-    RMW(best_zoneId, from, to);
+
+    // 统计ARS
+    Stamp_OOD = Stamp_GLOBAL - window;
+    int n_blks_ars = 0;
+    z = zones_collection + best_zoneId;
+    struct most_lru * zone_lru = (struct most_lru *)z->priv;
+    struct cache_page *p = zone_lru->tail;
+    while(p) // count ars
+    {
+         struct page_payload *payload = (struct page_payload *)p->priv;
+        
+        if (payload->stamp <= Stamp_OOD)
+        {
+            n_blks_ars ++;
+            //blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
+        } 
+        else {
+            break;
+        }
+
+        p = payload->lru_w_pre;
+    }
 
     // output write amplification.
-    z = zones_collection + best_zoneId;
-    uint32_t rmw_scope = N_ZONEBLK;
-    double wa = (double)rmw_scope / z->cblks;
-    log_info_sac("[%s] WA: %.2f (%u/%u)\n", __func__, wa, rmw_scope, z->cblks);
+    uint32_t rmw_scope = N_ZONEBLK - from;
+    double wa = (double)rmw_scope / z->cblks_wtr;
+    double wa_ars = (double)rmw_scope / n_blks_ars;
+
+    log_info_sac("[%s] WA: %.2f (%u/%u); ", __func__, wa, rmw_scope, z->cblks_wtr);
+    log_info_sac("WA-ARS: %.2f (%u/%u)\n", wa_ars, rmw_scope, n_blks_ars);
+
+    RMW(best_zoneId, from, to);
 
     return best_zoneId;
 }

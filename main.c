@@ -39,25 +39,27 @@ static void  resetSTT();
 int InitZBD();
 
 /* -------------- */
+static int traceIdx = 10;
 const char *tracefile[] = {
-    "./traces/src1_2.csv.req",
-    "./traces/wdev_0.csv.req",
-    "./traces/hm_0.csv.req",
-    "./traces/mds_0.csv.req",
-    "./traces/prn_0.csv.req",
-    "./traces/rsrch_0.csv.req",
-    "./traces/stg_0.csv.req",
-    "./traces/ts_0.csv.req",
-    "./traces/usr_0.csv.req",
-    "./traces/web_0.csv.req",
-   // "./traces/production-LiveMap-Backend-4K.req", // --> not in used.
-    "./traces/long.csv.req.full",                       // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
+    // "./traces/src1_2.csv.req",
+    // "./traces/wdev_0.csv.req",
+    // "./traces/hm_0.csv.req",
+    // "./traces/mds_0.csv.req",
+    // "./traces/prn_0.csv.req",
+    // "./traces/rsrch_0.csv.req",
     "./traces/LUN0.txt",
     "./traces/LUN1.txt",
     "./traces/LUN2.txt",
     "./traces/LUN3.txt",
     "./traces/LUN4.txt",
     "./traces/LUN6.txt",
+    "./traces/stg_0.csv.req",
+    "./traces/ts_0.csv.req",
+    "./traces/usr_0.csv.req",
+    "./traces/web_0.csv.req",
+   // "./traces/production-LiveMap-Backend-4K.req", // --> not in used.
+    "./traces/long.csv.req.full"                       // default set: cache size = 8M*blksize; persistent buffer size = 1.6M*blksize.
+
 };
     
 
@@ -69,7 +71,7 @@ void main(int argc, char **argv){
     InitZBD();
     CacheLayer_Init();
 
-    FILE *trace = fopen(tracefile[10],"rt");
+    FILE *trace = fopen(tracefile[traceIdx],"rt");
     trace_to_iocall(trace);
 
     CacheLayer_Uninstall();
@@ -377,6 +379,7 @@ int analyze_opts(int argc, char **argv)
     static struct option long_options[] = {
         {"cache-dev", required_argument, NULL, 'C'},  // FORCE
         {"smr-dev", required_argument, NULL, 'S'},    // FORCE
+        {"workload", required_argument, NULL, 'W'},
         {"workload-mode", required_argument, NULL, 'M'},
         {"cache-size", required_argument, NULL, 'c'},
         {"algorithm", required_argument, NULL, 'A'},
@@ -406,7 +409,7 @@ int analyze_opts(int argc, char **argv)
         case 'A': // algorithm
             if (strcmp(optarg, "CARS") == 0)
                 STT.op_algorithm = ALG_CARS;
-            if (strcmp(optarg, "CARS-PROP") == 0)
+            else if (strcmp(optarg, "CARS-PROP") == 0)
                 STT.op_algorithm = ALG_CARS_PROP;
             else if (strcmp(optarg, "MOST") == 0)
                 STT.op_algorithm = ALG_MOST;
@@ -422,6 +425,10 @@ int analyze_opts(int argc, char **argv)
         
         case 'P':
             STT.isPart = atoi(optarg) ? 1 : 0;
+            break;
+            
+        case 'W':
+            traceIdx = atoi(optarg);
             break;
 
         case 'M': // workload I/O mode

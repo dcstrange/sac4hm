@@ -40,6 +40,8 @@ struct zbd_zone{
     int wtpr;                           // in-zone block offset of write pointer
 
     uint32_t cblks;     // cache blocks (for both read and write)
+    uint32_t cblks_wtr; // cache blocks for write
+
     zBitmap *bitmap;
 
     void * priv;

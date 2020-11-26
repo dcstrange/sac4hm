@@ -393,8 +393,11 @@ retrive_cache_page(uint64_t tg_blk, int op)
         op == FOR_READ ? STT.cpages_r ++ : STT.cpages_w ++;
     }
     /* metadata */
-    page->status |= op;
-    
+    struct zbd_zone * zone = zones_collection + page->belong_zoneId;
+    if((op & FOR_WRITE) && !(page->status & FOR_WRITE))
+        zone->cblks_wtr ++;
+
+    page->status |= op;   
     /* algorithm */
     algorithm.hit(page, op);
     return page;
@@ -486,6 +489,8 @@ static inline int init_page(struct cache_page *page, uint64_t blkoff, int op)
     }
 
     zone->cblks ++;
+    if(op & FOR_WRITE) {zone->cblks_wtr ++;}
+
     set_Bit(zone->bitmap, page->blkoff_inzone);
 
     /* hashtable */
@@ -523,7 +528,7 @@ static inline int try_recycle_page(struct cache_page *page, int op)
 
 
     if(page->status)
-        return 0; // still for read or write 
+        return 0; // still for read or write, so keep it in the cache.
 
     /* If the page has no other status left, then clean its metadata. */
     STT.cpages_s --;
@@ -532,6 +537,8 @@ static inline int try_recycle_page(struct cache_page *page, int op)
     // zone metadata 
     struct zbd_zone *zone = zones_collection + page->belong_zoneId;
     zone->cblks --;
+    if(recycle_status & FOR_WRITE) {zone->cblks_wtr --;}
+
     if(zone->cblks == 0){
         free_Bitmap(zone->bitmap);
         zone->bitmap = NULL;

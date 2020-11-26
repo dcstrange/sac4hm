@@ -61,7 +61,7 @@ int most_init()
         z->priv = calloc(1, sizeof(struct most_lru));
     }
 
-    window = STT.n_cache_pages;
+    window = STT.n_cache_pages * 2;
 
     return 0;
 }
@@ -144,52 +144,59 @@ static int most_get_zone_out()
     int best_zoneId = -1;
     uint32_t from = 0, to = N_ZONEBLK - 1;
     uint32_t cpages_most = 0; 
-    int blks_ars = 0;
+    int blks_ars = 0, blks_most = 0;
 
     // Traverse every zone. 
     struct zbd_zone *z = zones_collection;
     for(int i = 0; i < N_ZONES; i++, z++)
     {
-        struct most_lru * zone_lru = (struct most_lru *)z->priv;
-        if(zone_lru->head == NULL) { continue; }
-
-        
         uint32_t blkoff_min = 0;
-        uint32_t zone_cpages;
-
-
-        // Traverse every page in zone. 获取zone内最小blkoff的ARS block
-        
-        int n_blks_ood = 0;
-        struct cache_page *page = zone_lru->tail;
-        struct page_payload *payload;
-        while(page)
-        {
-            payload = (struct page_payload *)page->priv;
-            n_blks_ood ++;
-            //blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
-
-            page = payload->lru_w_pre;
-        }
 
         //if(!STT.isPart) { blkoff_min = 0; }
-
-        zone_cpages = n_blks_ood;// / (N_ZONEBLK - blkoff_min);
-        if(zone_cpages > cpages_most){
-            cpages_most = zone_cpages;
+        if(z->cblks_wtr > cpages_most){
+            cpages_most = z->cblks_wtr;
 
             best_zoneId = z->zoneId;
             from = blkoff_min;
-            blks_ars = n_blks_ood;
         }
     }
 
-    RMW(best_zoneId, from, to);
+
+    // 统计ARS
+    Stamp_OOD = Stamp_GLOBAL - window;
+    int n_blks_ars = 0;
+    z = zones_collection + best_zoneId;
+    struct most_lru * zone_lru = (struct most_lru *)z->priv;
+    struct cache_page *p = zone_lru->tail;
+    while(p) // count ars
+    {
+         struct page_payload *payload = (struct page_payload *)p->priv;
+        
+        if (payload->stamp <= Stamp_OOD)
+        {
+            n_blks_ars ++;
+            //blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
+        } 
+        else {
+            break;
+        }
+
+        p = payload->lru_w_pre;
+    }
 
     // output write amplification.
-    uint32_t rmw_scope = N_ZONEBLK;
-    double wa = (double)rmw_scope / cpages_most;
-    log_info_sac("[%s] WA: %.2f (%u/%u)\n", __func__, wa, rmw_scope, cpages_most);
+    uint32_t rmw_scope = N_ZONEBLK - from;
+    double wa = (double)rmw_scope / z->cblks_wtr;
+    double wa_ars = (double)rmw_scope / n_blks_ars;
+
+    log_info_sac("[%s] WA: %.2f (%u/%u); ", __func__, wa, rmw_scope, z->cblks_wtr);
+    log_info_sac("WA-ARS: %.2f (%u/%u)\n", wa_ars, rmw_scope, n_blks_ars);
+
+
+    // RMW
+    RMW(best_zoneId, from, to);
+
+
 
     return best_zoneId;
 }

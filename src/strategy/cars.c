@@ -110,6 +110,7 @@ int cars_writeback_privi(int type)
     struct page_payload *payload;
 
     int zoneId;
+    struct zbd_zone *zone_best;
     uint32_t zblk_from, zblk_to, zblks_ars;
 
 EVICT_READ_BLKS:
@@ -166,13 +167,17 @@ EVICT_READ_BLKS:
     }
 
 EVICT_ZONE:
+    // output write amplification.
+    zone_best = zones_collection + zoneId;
+    uint32_t rmw_scope = N_ZONEBLK - zblk_from;
+    double wa = (double)rmw_scope / zone_best->cblks_wtr;
+    double wa_ars = (double)rmw_scope / zblks_ars;
+
+    log_info_sac("[%s] WA: %.2f (%u/%u); ", __func__, wa, rmw_scope, zone_best->cblks_wtr);
+    log_info_sac("WA-ARS: %.2f (%u/%u)\n", wa_ars, rmw_scope, zblks_ars);
+
     ret = RMW(zoneId, zblk_from, zblk_to);
     
-    // output write amplification.
-    uint32_t rmw_scope = N_ZONEBLK - zblk_from;
-    double wa = (double)rmw_scope / zblks_ars;
-    log_info_sac("[%s] WA: %.2f (%u/%u)\n", __func__, wa, rmw_scope, zblks_ars);
-
     return ret;
 }
 
@@ -222,9 +227,10 @@ static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to
 
             page = payload->lru_w_pre;
         }
-        if(!STT.isPart) { blkoff_min = 0; }
 
+        if(!STT.isPart) { blkoff_min = 0; }
         zone_arsc = (float)n_blks_ood / (N_ZONEBLK - blkoff_min);
+
         if(zone_arsc > best_arsc){
             best_zoneId = zone->zoneId;
             best_arsc = zone_arsc;
