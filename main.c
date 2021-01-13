@@ -385,6 +385,7 @@ int analyze_opts(int argc, char **argv)
         {"algorithm", required_argument, NULL, 'A'},
         {"rmw-part", required_argument, NULL, 'P'},
         {"dirtycache-proportion", required_argument, NULL, 'D'},
+        {"rw-exclusive", no_argument, NULL, 'E'},
         {"help", no_argument, NULL, 'h'},
         {0, 0, 0, 0}
     };
@@ -424,7 +425,7 @@ int analyze_opts(int argc, char **argv)
             break;
         
         case 'P':
-            STT.isPart = atoi(optarg) ? 1 : 0;
+            STT.isPartRMW = atoi(optarg) ? 1 : 0;
             break;
             
         case 'W':
@@ -451,7 +452,7 @@ int analyze_opts(int argc, char **argv)
             else{
                 printf("PARAM ERROR: unrecongnizd workload mode \"%s\", please assign mode [r]: read-only, [w]: write-only or [rw]: read-write.\n",
                        optarg);
-                exit(-1);
+                exit(1);
                 }
             break;
 
@@ -471,7 +472,7 @@ int analyze_opts(int argc, char **argv)
             n = parse_integer(optarg, &invalid);
             if(invalid){
                 log_err_sac("invalid cache size number %s", optarg);
-                exit(EXIT_FAILURE);
+                exit(1);
             }
             STT.n_cache_pages = n / BLKSIZE;
             printf("[User Setting] Cache Size = %s, pages = %lu.\n", optarg, STT.n_cache_pages);
@@ -479,15 +480,27 @@ int analyze_opts(int argc, char **argv)
         
         case 'D':
             propotion = atof(optarg);
-            if(!(propotion >= 0 && propotion <=1))
-            {
+            if(!(propotion >= 0 && propotion <=1)){
                 log_err_sac("PARAM ERROR: The dirty cache proportion must be 0<= x <= 1\n");
-                exit(EXIT_FAILURE);
+                exit(1);
             }
-            STT.dirtycache_proportion = propotion;
-            STT.is_cache_partition = 1;
-            break;
 
+            if(STT.rw_alloc_scheme != ALOC_BY_FREE){
+                log_err_sac("PARAM ERROR: Cannot set both \'dirtycache-proportion\' and \'rw-exclusive\'\n");
+                exit(1);
+            }
+
+            STT.rw_alloc_scheme = ALOC_BY_PROP;
+            STT.dirtycache_proportion = propotion;
+            break;
+        case 'E':
+            if(STT.rw_alloc_scheme != ALOC_BY_FREE){
+                log_err_sac("PARAM ERROR: Cannot set both \'dirtycache-proportion\' and \'rw-exclusive\'\n");
+                exit(1);
+            }
+
+            STT.rw_alloc_scheme = ALOC_BY_EXCLU;
+            break;
         case 'h':
             printf("\
                     \n\

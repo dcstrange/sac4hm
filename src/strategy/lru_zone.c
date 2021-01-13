@@ -158,7 +158,7 @@ static int lruzone_get_zone_out()
         struct page_payload *payload = (struct page_payload *)page->priv;
         stamp = payload->stamp;
 
-        //if(!STT.isPart) { blkoff_min = 0; }
+        //if(!STT.isPartRMW) { blkoff_min = 0; }
 
         if(stamp < stamp_oldest){
             stamp_oldest = stamp;

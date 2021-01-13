@@ -422,7 +422,7 @@ int analyze_opts(int argc, char **argv)
             break;
         
         case 'P':
-            STT.isPart = atoi(optarg) ? 1 : 0;
+            STT.isPartRMW = atoi(optarg) ? 1 : 0;
             break;
 
         case 'M': // workload I/O mode
@@ -473,13 +473,12 @@ int analyze_opts(int argc, char **argv)
         
         case 'D':
             propotion = atof(optarg);
-            if(!(propotion >= 0 && propotion <=1))
-            {
+            if(!(propotion >= 0 && propotion <=1)){
                 log_err_sac("PARAM ERROR: The dirty cache proportion must be 0<= x <= 1\n");
                 exit(EXIT_FAILURE);
             }
+            STT.rw_alloc_scheme = ALOC_BY_PROP;
             STT.dirtycache_proportion = propotion;
-            STT.is_cache_partition = 1;
             break;
 
         case 'h':
