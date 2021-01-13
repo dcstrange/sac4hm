@@ -14,7 +14,7 @@
 #   define def_evt_pages_read 1024   //  接近于 msec_RMW_part(65536) / msec_SMR_read
 #else
 #   define msec_SMR_read 14
-#   define msec_RMW_part(part) 8140.0 // mean value is 8140ms
+#   define msec_RMW_part(part) 6000.0 // mean value is around 6000ms
 #   define def_evt_pages_read 1024  // 接近于 8140 / 14
 #endif
 
