@@ -84,8 +84,8 @@ struct RuntimeSTAT STT =
     .start_Blkoff = N_ZONEBLK * N_COV_ZONE,
     .n_cache_pages = 8000000, //default 32GB
     .op_algorithm = ALG_CARS,
-    .isPart = 0,
-    .is_cache_partition = 0,
+    .isPartRMW = 0,
+    .rw_alloc_scheme = ALOC_BY_FREE,
     .dirtycache_proportion = -1,
 
     /* 1. Workload */
@@ -405,12 +405,22 @@ retrive_cache_page(uint64_t tg_blk, int op)
 }
 
 static int 
-flush_zone_pages()
+flush_zone_pages(int op)
 {
     int ptype = FOR_UNKNOWN;
-    if(STT.is_cache_partition)
+    if(STT.rw_alloc_scheme == ALOC_BY_PROP)
     {
         ptype = (STT.cpages_w >= STT.max_pages_w) ? FOR_WRITE : FOR_READ;
+        
+        if(STT.cpages_r == 0){ptype = FOR_WRITE;}
+        if(STT.cpages_w == 0){ptype = FOR_READ;}
+    }
+    else if(STT.rw_alloc_scheme == ALOC_BY_EXCLU)
+    {
+        ptype = 0x03 - op;
+
+        if(STT.cpages_r == 0){ptype = FOR_WRITE;}
+        if(STT.cpages_w == 0){ptype = FOR_READ;}
     }
     
     // call algorithm to decide which zone to be flush
@@ -430,7 +440,7 @@ alloc_page_for(uint64_t blkoff, int op)
         page = pop_freebuf();
         if(page) {break;}
 
-        flush_zone_pages();
+        flush_zone_pages(op);
     }
 
 /* metadata */ 

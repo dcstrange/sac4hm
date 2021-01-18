@@ -152,7 +152,7 @@ static int most_get_zone_out()
     {
         uint32_t blkoff_min = 0;
 
-        //if(!STT.isPart) { blkoff_min = 0; }
+        //if(!STT.isPartRMW) { blkoff_min = 0; }
         if(z->cblks_wtr > cpages_most){
             cpages_most = z->cblks_wtr;
 

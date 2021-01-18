@@ -22,6 +22,13 @@ enum algorthm_enum
     ALG_CARS_PROP = 0x05,
 };
 
+enum cache_rw_aloc_scheme
+{
+    ALOC_BY_FREE,
+    ALOC_BY_PROP,
+    ALOC_BY_EXCLU,
+};
+
 struct cache_page
 {
     uint64_t   pos;                    // page postion in cache pages. 
@@ -68,24 +75,29 @@ extern int read_block(uint64_t blkoff, void *buf);
 extern int write_block(uint64_t blkoff, void *buf);
 
 
-struct RuntimeSTAT{
-    /** This user basic info */
-    struct zbc_device *ZBD;
-
+/* Cache system runtime information and settings. */
+struct RuntimeSTAT{ 
+    /** workload info **/
     int traceId;
-    int workload_mode;
-    uint64_t n_cache_pages;
-    uint64_t start_Blkoff;
+    int workload_mode;                  // write only OR read+write.
+
+    /** Cache layer settings. **/
+    uint64_t n_cache_pages;             // set total avaliable cache pages number 
+    uint64_t start_Blkoff;              // set workload's start offset of HDD LBA by block number 
 
     int op_algorithm;
-    int isPart;
 
-    int    is_cache_partition;
+    int rw_alloc_scheme;                // see enum cache_rw_aloc_scheme
+    
     double dirtycache_proportion;
 
-    /** Runtime strategy refered parameter **/
-    //union StratetyUnion strategyRef;
+    /** Zoned Block Device settings **/
+    struct zbc_device *ZBD;
+    int isPartRMW;                         
 
+    /** Runtime strategy refered parameter **/
+
+    /** Runtime Statistic **/
     /* 1. Workload */
     uint64_t reqcnt_s, 
              reqcnt_r,

@@ -228,7 +228,7 @@ static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to
             page = payload->lru_w_pre;
         }
 
-        if(!STT.isPart) { blkoff_min = 0; }
+        if(!STT.isPartRMW) { blkoff_min = 0; }
         zone_arsc = (float)n_blks_ood / (N_ZONEBLK - blkoff_min);
 
         if(zone_arsc > best_arsc){
