@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <errno.h>
 #include <memory.h>
 #include <linux/types.h>
 #include <fcntl.h>
@@ -512,9 +513,11 @@ static inline int try_recycle_page(struct cache_page *page, int op)
 
     int recycle_status = page->status & op;
     if(!recycle_status)
-        return 0;
+        return 0; // page status does not match the op, so no need to recycle. 
 
     page->status &= (~op); // set page status
+
+    struct zbd_zone *z = zones_collection + page->belong_zoneId;
 
     /* STT */
     if(recycle_status & FOR_READ){
@@ -524,6 +527,7 @@ static inline int try_recycle_page(struct cache_page *page, int op)
     if (recycle_status & FOR_WRITE) {
         STT.cpages_w --;
         STT.gc_cpages_w ++ ;
+        z->cblks_wtr --;
     } 
 
 
@@ -535,15 +539,13 @@ static inline int try_recycle_page(struct cache_page *page, int op)
     STT.gc_cpages_s ++;
     
     // zone metadata 
-    struct zbd_zone *zone = zones_collection + page->belong_zoneId;
-    zone->cblks --;
-    if(recycle_status & FOR_WRITE) {zone->cblks_wtr --;}
+    z->cblks --;
 
-    if(zone->cblks == 0){
-        free_Bitmap(zone->bitmap);
-        zone->bitmap = NULL;
+    if(z->cblks == 0){
+        free_Bitmap(z->bitmap);
+        z->bitmap = NULL;
     } else {
-        clean_Bit(zone->bitmap, page->blkoff_inzone);
+        clean_Bit(z->bitmap, page->blkoff_inzone);
     }
 
     // hashtable
@@ -712,18 +714,26 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
 
 int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g CARS) can use it. 
 {
-    int ret;
+    int ret, n = 0;
     struct timeval tv_start, tv_stop;
+    ssize_t scope;
+
     log_info_sac("[%s] start r-m-w zone [%d] ... ", __func__, zoneId);
     
     struct zbd_zone *tg_zone = zones_collection + zoneId;
 
     Lap(&tv_start);
     /* Read blocks from ZBD refered to Bitmap*/
-    ret = zbd_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
-    if(ret < 0){
-        log_err_sac("[%s] Fail to read zone [%d] by Bitmap. \n", __func__, zoneId);
-        exit(-1);
+    while(1){
+        ret = zbd_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
+        if(ret)
+            break;
+        // else
+        log_err_sac("[%s] Fail to read zone [%d] by Bitmap (try %d times): , detail: %s \n", __func__, zoneId, n++, strerror(errno));
+        if(n == 10){
+            fprintf(stderr,"[%s] ERROR to read zone [%d] by Bitmap, detail: %s \n", __func__, zoneId, strerror(errno));
+            break;
+        }
     }
     
     /* Modify */
@@ -735,18 +745,30 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     }
 
     /* Set target zone write pointer */
-    ret = zbd_set_wp(STT.ZBD, zoneId, from_blk);
-    if(ret < 0){
-        log_err_sac("[%s] Fail to Set Zone[%d] 's WP to [%lu]. \n", __func__, zoneId, from_blk);
-        exit(-1);
-    }
+    n = 0;
+    while (1)
+    {
+        ret = zbd_set_wp(STT.ZBD, zoneId, from_blk);
+        if(ret != 0){
+            log_err_sac("[%s] Fail to Set Zone[%d] 's WP to [%lu] (try %d times), detail: %s. \n", __func__, zoneId, from_blk, n++, strerror(errno));
+            if(n == 10){
+                fprintf(stderr,"[%s] ERROR to Set Zone[%d] 's WP to [%lu] \n", __func__, zoneId, from_blk);
+                break;
+            }
+            continue;
+        }
 
     /* Write-Back */
-    ssize_t scope = zbd_write_zone(STT.ZBD, BUF_RMW, 0, zoneId, from_blk, to_blk - from_blk + 1);
-
-    if(scope < 0){
-        log_err_sac("[%s] Fail to Write Zone [%d]. \n", __func__, zoneId);
-        exit(-1);
+        scope = zbd_write_zone(STT.ZBD, BUF_RMW, 0, zoneId, from_blk, to_blk - from_blk + 1);
+        if(scope < 0){
+            log_err_sac("[%s] Fail to Write Zone [%d] (try %d times), detail: . \n", __func__, zoneId, n++, strerror(errno));
+            if(n == 10){
+                fprintf(stderr,"[%s] ERROR to Write Zone [%d]. \n", __func__, zoneId);
+                break;
+            }
+            continue;
+        }
+        break;
     }
 
     Lap(&tv_stop);
