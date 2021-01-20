@@ -736,7 +736,7 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     /* Read blocks from ZBD refered to Bitmap*/
     while(1){
         ret = zbd_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
-        if(ret)
+        if(ret >= 0)
             break;
         // else
         log_err_sac("[%s] Fail to read zone [%d] by Bitmap (try %d times): , detail: %s \n", __func__, zoneId, n++, strerror(errno));
@@ -750,8 +750,7 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     // load dirty pages from cache device
     ret = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
     if(ret < 0){
-        log_err_sac("[%s] Fail to read cache by Bitmap. \n", __func__ );
-        exit(-1);
+        fprintf(stderr,"[%s] Fail to read cache by Bitmap. \n", __func__ );
     }
 
     /* Set target zone write pointer */
