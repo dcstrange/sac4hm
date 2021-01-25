@@ -31,10 +31,10 @@
 #endif
 
 /* TEST DEVICE */
-static char config_dev_zbd[] = "/dev/sdc";
-static char config_dev_cache[] = "/mnt/SSD/raw"; //"/dev/nvme0n1";// ; //; //"/mnt/cache/raw"; 
+static char config_dev_zbd[] = "/home/fei/devel/zbd/libzbc/zbd-emu-disk";
+static char config_dev_cache[] = "/dev/nvme0n1"; //"/dev/nvme0n1";// ; //; //"/mnt/cache/raw"; 
 
-//#define ZBD_DRIVE_EMU
+#define ZBD_DRIVE_EMU
 #ifdef ZBD_DRIVE_EMU
 #   define ZBD_OFLAG ZBC_O_DRV_FAKE
 #else
@@ -44,6 +44,15 @@ static char config_dev_cache[] = "/mnt/SSD/raw"; //"/dev/nvme0n1";// ; //; //"/m
 
 /* ALOGORITHM RELATED */
 static float SMR_USEC_PER_READ = 14000;
+/* Trace Type */
+#define TRACE_SYSTOR17
 
+#ifdef TRACE_SYSTOR17
+    #define ACT_READ 'R'
+    #define ACT_WRITE 'W'
+#else
+    #define ACT_READ 0x00
+    #define ACT_WRITE 0x01
+#endif
 
 #endif

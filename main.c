@@ -29,8 +29,7 @@ void test_bitmap();
 void test_readblk_bitmap();
 int test_zbd();
 
-#define ACT_READ 0x00
-#define ACT_WRITE 0x01
+
 void trace_to_iocall(FILE *trace);
 static void reportSTT();
 static void reportSTT_brief();
@@ -146,7 +145,7 @@ void trace_to_iocall(FILE *trace)
     while (!feof(trace) && STT.reqcnt_s < total_n_req)
     {
 
-        ret = fscanf(trace, "%d %d %lu\n", &action, &mask, &tg_blk);
+        ret = fscanf(trace, "%c %d %lu\n", &action, &mask, &tg_blk);
         if (ret < 0){
             log_err_sac("error while reading trace file.");
             break;
@@ -157,6 +156,9 @@ void trace_to_iocall(FILE *trace)
             continue;
         }
 
+        #ifdef TRACE_SYSTOR17
+            tg_blk /= BLKSIZE;
+        #endif
         tg_blk += STT.start_Blkoff;
 
         if((tg_blk / N_ZONEBLK) > N_ZONES){
