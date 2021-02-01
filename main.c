@@ -123,7 +123,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 60000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 375000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
@@ -427,7 +427,7 @@ int analyze_opts(int argc, char **argv)
             else
                 STT.op_algorithm = ALG_UNKNOWN;
 
-	    printf("[User Setting] Cache Algorithm: %s.\n", optarg);
+	        printf("[User Setting] Cache Algorithm: %s.\n", optarg);
             break;
         
         case 'P':
@@ -436,6 +436,8 @@ int analyze_opts(int argc, char **argv)
             
         case 'W':
             traceIdx = atoi(optarg);
+            printf("[User Setting] Workload: %s.\n", tracefile[traceIdx]);
+
             break;
 
         case 'M': // workload I/O mode
