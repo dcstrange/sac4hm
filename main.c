@@ -123,7 +123,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 60000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
@@ -144,8 +144,12 @@ void trace_to_iocall(FILE *trace)
     int mask;
     while (!feof(trace) && STT.reqcnt_s < total_n_req)
     {
-
+        #ifdef TRACE_SYSTOR17
         ret = fscanf(trace, "%c %d %lu\n", &action, &mask, &tg_blk);
+        #else
+        ret = fscanf(trace, "%d %d %lu\n", &action, &mask, &tg_blk);
+        #endif
+
         if (ret < 0){
             log_err_sac("error while reading trace file.");
             break;
