@@ -173,10 +173,11 @@ EVICT_ZONE:
     double wa = (double)rmw_scope / zone_best->cblks_wtr;
     double wa_ars = (double)rmw_scope / zblks_ars;
 
-    log_info_sac("[%s] WA: %.2f (%u/%u); ", __func__, wa, rmw_scope, zone_best->cblks_wtr);
-    log_info_sac("WA-ARS: %.2f (%u/%u)\n", wa_ars, rmw_scope, zblks_ars);
+    int dirty_pages = RMW(zoneId, zblk_from, zblk_to);
 
-    ret = RMW(zoneId, zblk_from, zblk_to);
+    //log_info_sac("[%s] WA: %.2f (%u/%u); ", __func__, wa, rmw_scope, zone_best->cblks_wtr);
+    log_info_sac("[%s] WA: %.2f (%u/%u); ", __func__, wa, rmw_scope, dirty_pages);
+    log_info_sac("WA-ARS: %.2f (%u/%u)\n", wa_ars, rmw_scope, zblks_ars);
     
     return ret;
 }

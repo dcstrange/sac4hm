@@ -713,7 +713,7 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
 
             page_cnt ++;
             if(tg_zone_meta->cblks == 0)
-                return 0;
+                return page_cnt;
         }
         this_word ++;
         pos_from = 0;
@@ -727,6 +727,7 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     int ret, n = 0;
     struct timeval tv_start, tv_stop;
     ssize_t scope;
+    int dirty_pages = 0;
 
     log_info_sac("[%s] start r-m-w zone [%d] ... ", __func__, zoneId);
     
@@ -748,8 +749,8 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     
     /* Modify */
     // load dirty pages from cache device
-    ret = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
-    if(ret < 0){
+    dirty_pages = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
+    if(dirty_pages <= 0){
         fprintf(stderr,"[%s] Fail to read cache by Bitmap. \n", __func__ );
     }
 
@@ -792,7 +793,7 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
 //    static char buf_log[256];
 //    sprintf(buf_log, "%ld, %.2f\n", scope, secs);
 //    log_write_sac(f_log, buf_log);
-    return ret;
+    return dirty_pages;
 }
 
 int Page_force_drop(struct cache_page *page)
