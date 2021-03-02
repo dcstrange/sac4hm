@@ -5,11 +5,16 @@
 #include "bitmap.h"
 
 
+enum ZBD_DRIVE_TYPE {
+    DM_SMR = 0,
+    HM_SMR = 1,
+};
+
 
 enum page_status {
-    FOR_UNKNOWN   = 0x00,
-    FOR_READ      = 0x01,
-    FOR_WRITE     = 0x02,
+    FOR_UNKNOWN   = 0x0,
+    FOR_READ      = 0x1,
+    FOR_WRITE     = 0x2,
 };
 
 enum algorthm_enum 
@@ -92,9 +97,10 @@ struct RuntimeSTAT{
     double dirtycache_proportion;
 
     /** Zoned Block Device settings **/
+    int zbd_drive_type;     // [0] DM-SMR or [1]HM-SMR
+    int zbd_fd;             
     struct zbc_device *ZBD;
     int isPartRMW;                         
-
     /** Runtime strategy refered parameter **/
 
     /** Runtime Statistic **/

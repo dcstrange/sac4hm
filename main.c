@@ -99,8 +99,13 @@ int InitZBD()
     }
 
 /* Open ZBD */
-    //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-    ret = zbd_open(config_dev_zbd, O_RDWR | O_DIRECT | ZBD_OFLAG, &STT.ZBD);
+    if(STT.zbd_drive_type == HM_SMR){
+        //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+        ret = zbd_open(config_dev_zbd, O_RDWR | O_DIRECT | ZBD_OFLAG, &STT.ZBD);
+    } else if(STT.zbd_drive_type == DM_SMR) {
+        STT.zbd_fd = open(config_dev_zbd, O_RDWR | O_DIRECT);
+        ret = STT.zbd_fd;
+    }
 
     if(ret < 0){
         log_err_sac("Open ZBD failed.\n");
@@ -123,7 +128,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 375000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 60000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
@@ -383,6 +388,7 @@ parse_integer (const char *str, int *invalid)
 int analyze_opts(int argc, char **argv)
 {
     static struct option long_options[] = {
+        {"smr-type", required_argument, NULL, 'T'},
         {"cache-dev", required_argument, NULL, 'C'},  // FORCE
         {"smr-dev", required_argument, NULL, 'S'},    // FORCE
         {"workload", required_argument, NULL, 'W'},
@@ -412,6 +418,14 @@ int analyze_opts(int argc, char **argv)
         double propotion = -1;
         switch (opt)
         {
+        
+        case 'T': //DM-SMR or HM-SMR
+            if(strcmp(optarg, "HM") == 0)
+                STT.zbd_drive_type = HM_SMR;
+            else if(strcmp(optarg, "DM") == 0)
+                STT.zbd_drive_type = DM_SMR;
+            printf("[User Setting] SMR drive type: %s.\n", optarg);
+            break;
 
         case 'A': // algorithm
             if (strcmp(optarg, "CARS") == 0)

@@ -78,6 +78,8 @@ static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt);
 /* STT */
 struct RuntimeSTAT STT = 
 {
+    .zbd_drive_type = HM_SMR,
+    .zbd_fd = -1,
     .ZBD = NULL,
     .traceId = 0,
     .workload_mode = 0x02, //0x01 | 0x02,
@@ -182,7 +184,16 @@ int read_block(uint64_t blkoff, void *buf)
 /* handle data */
     //read from zbd
     Lap(&tv_start);
-    ret = zbd_read_zblk(STT.ZBD, buf, page->belong_zoneId, page->blkoff_inzone, 1);
+    if(STT.zbd_drive_type == HM_SMR){
+        ret = zbd_read_zblk(STT.ZBD, buf, page->belong_zoneId, page->blkoff_inzone, 1);
+    } else if(STT.zbd_drive_type == DM_SMR){
+        #ifndef NO_REAL_DISK_IO
+        ret = pread(STT.zbd_fd, buf, BLKSIZE, blkoff * BLKSIZE);
+        #else
+        ret = 0;
+        #endif
+
+    }
     Lap(&tv_stop);
     STT.time_zbd_read += TimerInterval_seconds(&tv_start, &tv_stop);
 
@@ -659,8 +670,11 @@ static inline int zbd_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64
 /*
  @return: the cache pages count. 
 */
-static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap){
+static inline int cache_partread_by_bitmap( uint32_t zoneId, void * zonebuf, uint64_t from, uint64_t to, zBitmap *bitmap, 
+                                            uint32_t * valid_pos_chklist, uint32_t * n_chklist)
+{
     int ret;
+    *n_chklist = 0;
     uint32_t page_cnt = 0;
     uint64_t tg_zone_blkoff = zoneId * N_ZONEBLK;
     struct zbd_zone * tg_zone_meta = zones_collection + zoneId;
@@ -711,9 +725,12 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
             algorithm.logout(page, FOR_WRITE);
             try_recycle_page(page, FOR_WRITE); 
 
+            valid_pos_chklist[page_cnt] = pos;
             page_cnt ++;
+            *n_chklist = page_cnt;
+
             if(tg_zone_meta->cblks == 0)
-                return 0;
+                return page_cnt;
         }
         this_word ++;
         pos_from = 0;
@@ -722,8 +739,51 @@ static inline int cache_partread_by_bitmap(uint32_t zoneId, void * zonebuf, uint
 
 }
 
-int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g CARS) can use it. 
-{
+static int RMW_DM(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk){
+
+    int ret, n = 0;
+    struct zbd_zone *tg_zone = zones_collection + zoneId;
+    uint64_t zone_start = (uint64_t)ZONESIZE * zoneId;
+    ssize_t scope;
+
+    // load dirty pages from cache device
+    static uint32_t valid_pos_chklist[N_ZONEBLK];
+    uint32_t n_chklist;
+    ret = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap, valid_pos_chklist, &n_chklist);
+    if(ret < 0){
+        fprintf(stderr,"[%s] Fail to read cache by Bitmap. \n", __func__ );
+    }
+
+    /* Write-Back */
+    Lap(&tv_start);
+
+    #ifndef NO_REAL_DISK_IO
+    for(uint32_t i = 0; i < n_chklist; i++)
+    {
+        uint32_t off_inzone = BLKSIZE * valid_pos_chklist[i];
+        ret = pwrite(STT.zbd_fd, (BUF_RMW + off_inzone), BLKSIZE, (zone_start + off_inzone));
+        if(ret != BLKSIZE)
+            log_err_sac("[%s] Fail to Write Zone [%d] (try %d times), detail: . \n", __func__, zoneId, n++, strerror(errno));
+    }
+    #endif
+    Lap(&tv_stop);
+    double secs = TimerInterval_seconds(&tv_start, &tv_stop);
+
+    scope = to_blk - from_blk;
+    
+    STT.time_zbd_rmw += secs;
+    STT.rmw_times ++;
+    STT.rmw_scope += scope;
+
+    log_info_sac("finish.\n");
+
+//    static char buf_log[256];
+//    sprintf(buf_log, "%ld, %.2f\n", scope, secs);
+//    log_write_sac(f_log, buf_log);
+    return 0;
+}
+
+static int RMW_HM(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk){
     int ret, n = 0;
     struct timeval tv_start, tv_stop;
     ssize_t scope;
@@ -748,7 +808,9 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
     
     /* Modify */
     // load dirty pages from cache device
-    ret = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap);
+    static uint32_t valid_pos_chklist[N_ZONEBLK];
+    uint32_t n_chklist;
+    ret = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap, valid_pos_chklist, &n_chklist);
     if(ret < 0){
         fprintf(stderr,"[%s] Fail to read cache by Bitmap. \n", __func__ );
     }
@@ -793,6 +855,15 @@ int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g
 //    sprintf(buf_log, "%ld, %.2f\n", scope, secs);
 //    log_write_sac(f_log, buf_log);
     return ret;
+}
+
+
+int RMW(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk)  // Algorithms (e.g CARS) can use it. 
+{
+    if(STT.zbd_drive_type == HM_SMR)
+        return RMW_HM(zoneId, from_blk, to_blk);
+    else if(STT.zbd_drive_type == DM_SMR)
+        return RMW_DM(zoneId, from_blk, to_blk);
 }
 
 int Page_force_drop(struct cache_page *page)
