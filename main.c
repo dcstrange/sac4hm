@@ -424,6 +424,12 @@ int analyze_opts(int argc, char **argv)
                 STT.op_algorithm = ALG_MOST_CMRW;
             else if (strcmp(optarg, "LRUZONE") == 0)
                 STT.op_algorithm = ALG_LRUZONE;
+            else if (strcmp(optarg, "LFUZONE") == 0)
+                STT.op_algorithm = ALG_LFUZONE;
+            else if (strcmp(optarg, "WALFU") == 0)
+                STT.op_algorithm = ALG_WALFU;
+            else if (strcmp(optarg, "WALRU") == 0)
+                STT.op_algorithm = ALG_WALRU;
             else
                 STT.op_algorithm = ALG_UNKNOWN;
 

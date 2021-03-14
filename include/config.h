@@ -14,13 +14,31 @@
 
 #ifndef ZBD_SPEC
 #define ZBD_SPEC5
-#   define ZONESIZE  268435456
-#   define N_ZONESEC 524288
-#   define N_ZONEBLK 65536
+#   define ZONESIZE  16777216
+#   define N_ZONESEC 32768
+#   define N_ZONEBLK 4096
 
-#   define N_ZONES 37256    // = N_COV_ZONE + N_SEQ_ZONES
-#   define N_COV_ZONE 378
-#   define N_SEQ_ZONES 36878
+#   define N_ZONES 437500    // = N_COV_ZONE + N_SEQ_ZONES
+#   define N_COV_ZONE 0
+#   define N_SEQ_ZONES 437500
+
+
+// #   define ZONESIZE  33554432
+// #   define N_ZONESEC 65536
+// #   define N_ZONEBLK 8192
+
+// #   define N_ZONES 218750    // = N_COV_ZONE + N_SEQ_ZONES
+// #   define N_COV_ZONE 0
+// #   define N_SEQ_ZONES 218750
+
+// #   define ZONESIZE  268435456
+// #   define N_ZONESEC 524288
+// #   define N_ZONEBLK 65536
+
+// #   define N_ZONES 37256    // = N_COV_ZONE + N_SEQ_ZONES
+// #   define N_COV_ZONE 378
+// #   define N_SEQ_ZONES 36878
+
 #endif
 
 #define NO_REAL_DISK_IO 
@@ -34,7 +52,7 @@
 static char config_dev_zbd[] = "/home/fei/devel/zbd/libzbc/zbd-emu-disk";
 static char config_dev_cache[] = "/dev/nvme0n1"; //"/dev/nvme0n1";// ; //; //"/mnt/cache/raw"; 
 
-#define ZBD_DRIVE_EMU
+//#define ZBD_DRIVE_EMU
 #ifdef ZBD_DRIVE_EMU
 #   define ZBD_OFLAG ZBC_O_DRV_FAKE
 #else
@@ -43,9 +61,9 @@ static char config_dev_cache[] = "/dev/nvme0n1"; //"/dev/nvme0n1";// ; //; //"/m
 
 
 /* ALOGORITHM RELATED */
-static float SMR_USEC_PER_READ = 14000;
+
 /* Trace Type */
-#define TRACE_SYSTOR17
+//#define TRACE_SYSTOR17
 
 #ifdef TRACE_SYSTOR17
     #define ACT_READ 'R'

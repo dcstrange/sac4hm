@@ -309,6 +309,27 @@ void CacheLayer_Init()
             algorithm.hit = lruzone_hit;
             algorithm.GC_privillege = lruzone_writeback_privi;
             break;
+        case ALG_LFUZONE:
+            algorithm.init = cars_lfuzone_init;
+            algorithm.login = cars_lfuzone_login;
+            algorithm.logout = cars_lfuzone_logout;
+            algorithm.hit = cars_lfuzone_hit;
+            algorithm.GC_privillege = cars_lfuzone_writeback_privi;
+            break;
+        case ALG_WALFU:
+            algorithm.init = cars_wa_tradeoff_lfu_init;
+            algorithm.login = cars_wa_tradeoff_lfu_login;
+            algorithm.logout = cars_wa_tradeoff_lfu_logout;
+            algorithm.hit = cars_wa_tradeoff_lfu_hit;
+            algorithm.GC_privillege = cars_wa_tradeoff_lfu_writeback_privi;
+            break;
+        case ALG_WALRU:
+            algorithm.init = cars_wa_tradeoff_lru_init;
+            algorithm.login = cars_wa_tradeoff_lru_login;
+            algorithm.logout = cars_wa_tradeoff_lru_logout;
+            algorithm.hit = cars_wa_tradeoff_lru_hit;
+            algorithm.GC_privillege = cars_wa_tradeoff_lru_writeback_privi;
+            break;            
         case ALG_UNKNOWN:
             log_err_sac("[error]func:%s, unknown algorithm. \n", __func__);
             exit(-1);
@@ -397,6 +418,8 @@ retrive_cache_page(uint64_t tg_blk, int op)
     struct zbd_zone * zone = zones_collection + page->belong_zoneId;
     if((op & FOR_WRITE) && !(page->status & FOR_WRITE))
         zone->cblks_wtr ++;
+
+    zone->hits ++;
 
     page->status |= op;   
     /* algorithm */
@@ -554,6 +577,7 @@ static inline int try_recycle_page(struct cache_page *page, int op)
     if(z->cblks == 0){
         free_Bitmap(z->bitmap);
         z->bitmap = NULL;
+        z->hits = 0;
     } else {
         clean_Bit(z->bitmap, page->blkoff_inzone);
     }

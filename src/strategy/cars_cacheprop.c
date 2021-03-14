@@ -154,7 +154,7 @@ EVICT_ZONE:
     }
 
     ret = RMW(zoneId, zblk_from, zblk_to);
-    
+    struct zbd_zone *zone = zones_collection + zoneId;
     // output write amplification.
     uint32_t rmw_scope = N_ZONEBLK - zblk_from;
     double wa = (double)rmw_scope / zblks_ars;
@@ -192,31 +192,16 @@ static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to
 
         // Traverse every page in zone. 获取zone内最小blkoff的ARS block
         uint32_t n_blks_ood = 0;
-        struct cache_page *page = zone_lru->tail;
-        struct page_payload *payload;
-        while(page)
-        {
-            payload = (struct page_payload *)page->priv;
-            
-            if (payload->stamp <= Stamp_OOD)
-            {
-                n_blks_ood ++;
-                blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
-            } 
-            else {
-                break;
-            }
 
-            page = payload->lru_w_pre;
-        }
         if(!STT.isPartRMW) { blkoff_min = 0; }
 
-        zone_arsc = (float)n_blks_ood / (N_ZONEBLK - blkoff_min);
+        zone_arsc = (float)1/(zone->hits+1);
         if(zone_arsc > best_arsc){
+
             best_zoneId = zone->zoneId;
             best_arsc = zone_arsc;
             from = blkoff_min;
-            blks_ars = n_blks_ood;
+            blks_ars = zone->cblks_wtr;
         }
     }
 

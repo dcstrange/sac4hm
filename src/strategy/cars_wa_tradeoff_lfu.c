@@ -20,6 +20,7 @@ extern int Page_force_drop(struct cache_page *page);
 /* cars-specified objs */
 struct page_payload{
     uint64_t stamp;
+    uint64_t hits;
     struct cache_page *lru_w_pre, *lru_w_next;
     struct cache_page *lru_r_pre, *lru_r_next;
     int status;
@@ -45,7 +46,7 @@ static inline void lru_top(struct cache_page *page, int op);
 /* cache out */
 static int cars_get_zone_out();
 
-int cars_init()
+int cars_wa_tradeoff_lfu_init()
 {
     /* init page priv field. */
     struct cache_page *page = cache_rt.pages;
@@ -65,7 +66,7 @@ int cars_init()
     return 0;
 }
 
-int cars_login(struct cache_page *page, int op)
+int cars_wa_tradeoff_lfu_login(struct cache_page *page, int op)
 {   
     lru_insert(page, op);
 
@@ -73,17 +74,18 @@ int cars_login(struct cache_page *page, int op)
 
     payload->stamp = Stamp_GLOBAL;
     Stamp_GLOBAL ++;
+    payload->hits = 1;
     return 0;
 }
 
-int cars_logout(struct cache_page *page, int op)
+int cars_wa_tradeoff_lfu_logout(struct cache_page *page, int op)
 {   
     lru_remove(page, op);
     
     return 0;
 }
 
-int cars_hit(struct cache_page *page, int op)
+int cars_wa_tradeoff_lfu_hit(struct cache_page *page, int op)
 {
     struct page_payload *payload = (struct page_payload *)page->priv;
 
@@ -97,10 +99,11 @@ int cars_hit(struct cache_page *page, int op)
     payload->stamp = Stamp_GLOBAL;
 
     Stamp_GLOBAL ++; 
+    payload->hits ++;
     return 0;
 }
 
-int cars_writeback_privi(int type)
+int cars_wa_tradeoff_lfu_writeback_privi(int type)
 {
     Stamp_OOD = Stamp_GLOBAL - window; // // 不是好的方法。是没有依据的人工参数。
     //Stamp_OOD = Stamp_GLOBAL - STT.hitnum_s;
@@ -182,7 +185,7 @@ EVICT_ZONE:
     return ret;
 }
 
-int cars_flush_allcache(){
+int cars_wa_tradeoff_lfu_flush_allcache(){
   
     return 0;
 }
@@ -195,55 +198,34 @@ static int cars_get_zone_out(int *zoneId, uint32_t *zblk_from, uint32_t *zblk_to
 {
     int best_zoneId = -1;
     uint32_t from = 0, to = N_ZONEBLK - 1;
-    float best_arsc = 0;   // arsc = 1/cars = ood_blks/rmw_length .   {0< arsc <= 1}
+    double best_score = 0;   // arsc = 1/cars = ood_blks/rmw_length .   {0< arsc <= 1}
     uint32_t blks_ars = 0;
 
     // Traverse every zone. 
     struct zbd_zone *zone = zones_collection;
     for(int i = 0; i < N_ZONES; i++, zone++)
     {
-        struct cars_lru * zone_lru = (struct cars_lru *)zone->priv;
-        if(zone_lru->head == NULL) { continue; }
-
+        if(zone->cblks_wtr == 0) { continue; }
+        
         uint32_t blkoff_min = N_ZONEBLK - 1;
         uint32_t blkoff_min_most = N_ZONEBLK - 1;
-        float zone_arsc;
 
         // Traverse every page in zone. 获取zone内最小blkoff的ARS block
-        uint32_t n_blks_ood = 0;
-        struct cache_page *page = zone_lru->tail;
-        struct page_payload *payload;
-        while(page)
-        {
-            payload = (struct page_payload *)page->priv;
-            
-            if (payload->stamp <= Stamp_OOD)
-            {
-                n_blks_ood ++;
-                blkoff_min = (page->blkoff_inzone < blkoff_min) ? page->blkoff_inzone : blkoff_min;
-            } 
-            else {
-                break;
-            }
-
-            page = payload->lru_w_pre;
-        }
+        double score = (double)(zone->cblks_wtr) * (zone->cblks_wtr)  * (zone->cblks_wtr) / (zone->hits + 1);
 
         if(!STT.isPartRMW) { blkoff_min = 0; }
-        zone_arsc = (float)n_blks_ood / (N_ZONEBLK - blkoff_min);
 
-        if(zone_arsc > best_arsc){
+        if(score > best_score){
             best_zoneId = zone->zoneId;
-            best_arsc = zone_arsc;
+            best_score = score;
             from = blkoff_min;
-            blks_ars = n_blks_ood;
         }
     }
 
     *zoneId = best_zoneId;
     *zblk_from = from;
     *zblk_to = to;
-    *zblks_ars = blks_ars;
+    *zblks_ars = 0;
 
     return best_zoneId;
 }

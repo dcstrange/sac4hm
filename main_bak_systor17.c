@@ -66,18 +66,12 @@ const char *tracefile[] = {
 
 void main(int argc, char **argv){
 
-   analyze_opts(argc, argv);
+    analyze_opts(argc, argv);
 
     InitZBD();
     CacheLayer_Init();
 
     FILE *trace = fopen(tracefile[traceIdx],"rt");
-    if(trace == NULL)
-    {
-        log_err_sac("Trace file open failed.\n");
-        exit(1);
-    }
-
     trace_to_iocall(trace);
 
     CacheLayer_Uninstall();
@@ -130,7 +124,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 200000000;//125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
@@ -148,16 +142,11 @@ void trace_to_iocall(FILE *trace)
 
     log_info_sac("[Cache warming...]\n");
 
-
-    /* objects for trace statistics */
-    // uint64_t trc_lba_min = -1, trc_lba_max = 0;
-    // uint64_t trc_lba_wrt_min = -1, trc_lba_wrt_max = 0;
-
     int mask;
     while (!feof(trace) && STT.reqcnt_s < total_n_req)
     {
 
-        ret = fscanf(trace, "%c %d %lu\n", &action, &mask, &tg_blk);
+        ret = fscanf(trace, "%d %d %lu\n", &action, &mask, &tg_blk);
         if (ret < 0){
             log_err_sac("error while reading trace file.");
             break;
@@ -168,7 +157,6 @@ void trace_to_iocall(FILE *trace)
             continue;
         }
 
-        tg_blk /= BLKSIZE;
         tg_blk += STT.start_Blkoff;
 
         if((tg_blk / N_ZONEBLK) > N_ZONES){
@@ -187,14 +175,8 @@ void trace_to_iocall(FILE *trace)
         }
 
                 
-        if (action == 'R' && (STT.workload_mode & 0x01))
-        {   
-            // if(tg_blk < trc_lba_min)
-            //     trc_lba_min = tg_blk;
-            // if(tg_blk > trc_lba_max)
-            //     trc_lba_max = tg_blk;
-
-            Lap(&tv_start);
+        if (action == ACT_READ && (STT.workload_mode & 0x01))
+        {   Lap(&tv_start);
             ret = read_block(tg_blk, data);
             Lap(&tv_stop);
 
@@ -202,25 +184,15 @@ void trace_to_iocall(FILE *trace)
                 log_err_sac("read block error.\n");
                 return;
             }
-            time = TimerInterval_seconds(&tv_start,&tv_stop); 
-            STT.time_req_r += time; 
+            time = TimerInterval_seconds(&tv_start, &tv_stop); 
+            STT.time_req_r += time;
             STT.time_req_s += time;
 
             STT.reqcnt_r ++;
             STT.reqcnt_s ++;
         }
-        else if (action == 'W' && (STT.workload_mode & 0x02))
+        else if (action == ACT_WRITE && (STT.workload_mode & 0x02))
         {
-            // if(tg_blk < trc_lba_min)
-            //     trc_lba_min = tg_blk;
-            // if(tg_blk > trc_lba_max)
-            //     trc_lba_max = tg_blk;
-
-            // if(tg_blk < trc_lba_wrt_min)
-            //     trc_lba_wrt_min = tg_blk;
-            // if(tg_blk > trc_lba_wrt_max)
-            //     trc_lba_wrt_max = tg_blk;
-
             Lap(&tv_start);
             ret = write_block(tg_blk, data);
             Lap(&tv_stop);
@@ -242,25 +214,18 @@ void trace_to_iocall(FILE *trace)
         }
 
         
-            if (STT.reqcnt_s % REPORT_INTERVAL_brief == 0){
-                reportSTT_brief();
-            } 
+        if (STT.reqcnt_s % REPORT_INTERVAL_brief == 0){
+            reportSTT_brief();
+        } 
 
-            if (STT.reqcnt_s % REPORT_INTERVAL == 0){
-                reportSTT();
-            }
+        if (STT.reqcnt_s % REPORT_INTERVAL == 0){
+            reportSTT();
+        }
     }
 
     reportSTT();
     log_info_sac("[Workload finished.]\n");
 
-    // log_info_sac("%12s\t%12s\t%12s\t%12s\n",
-    //             "SUM",    "WRITE(\%)", "LBA range", "WRITE range"
-    //     );
-    // log_info_sac("%-12lu\t%12.1f\t%12lu\t%12lu\n", 
-    //             STT.reqcnt_s, (double)STT.reqcnt_w * 100 / STT.reqcnt_s, (trc_lba_max - trc_lba_min), (trc_lba_wrt_max - trc_lba_wrt_min)
-    //     );
-    
     free(data);
 }
 
@@ -420,6 +385,7 @@ int analyze_opts(int argc, char **argv)
         {"algorithm", required_argument, NULL, 'A'},
         {"rmw-part", required_argument, NULL, 'P'},
         {"dirtycache-proportion", required_argument, NULL, 'D'},
+        {"rw-exclusive", no_argument, NULL, 'E'},
         {"help", no_argument, NULL, 'h'},
         {0, 0, 0, 0}
     };
@@ -461,7 +427,7 @@ int analyze_opts(int argc, char **argv)
         case 'P':
             STT.isPartRMW = atoi(optarg) ? 1 : 0;
             break;
-        
+            
         case 'W':
             traceIdx = atoi(optarg);
             break;
@@ -486,7 +452,7 @@ int analyze_opts(int argc, char **argv)
             else{
                 printf("PARAM ERROR: unrecongnizd workload mode \"%s\", please assign mode [r]: read-only, [w]: write-only or [rw]: read-write.\n",
                        optarg);
-                exit(-1);
+                exit(1);
                 }
             break;
 
@@ -506,7 +472,7 @@ int analyze_opts(int argc, char **argv)
             n = parse_integer(optarg, &invalid);
             if(invalid){
                 log_err_sac("invalid cache size number %s", optarg);
-                exit(EXIT_FAILURE);
+                exit(1);
             }
             STT.n_cache_pages = n / BLKSIZE;
             printf("[User Setting] Cache Size = %s, pages = %lu.\n", optarg, STT.n_cache_pages);
@@ -516,12 +482,25 @@ int analyze_opts(int argc, char **argv)
             propotion = atof(optarg);
             if(!(propotion >= 0 && propotion <=1)){
                 log_err_sac("PARAM ERROR: The dirty cache proportion must be 0<= x <= 1\n");
-                exit(EXIT_FAILURE);
+                exit(1);
             }
+
+            if(STT.rw_alloc_scheme != ALOC_BY_FREE){
+                log_err_sac("PARAM ERROR: Cannot set both \'dirtycache-proportion\' and \'rw-exclusive\'\n");
+                exit(1);
+            }
+
             STT.rw_alloc_scheme = ALOC_BY_PROP;
             STT.dirtycache_proportion = propotion;
             break;
+        case 'E':
+            if(STT.rw_alloc_scheme != ALOC_BY_FREE){
+                log_err_sac("PARAM ERROR: Cannot set both \'dirtycache-proportion\' and \'rw-exclusive\'\n");
+                exit(1);
+            }
 
+            STT.rw_alloc_scheme = ALOC_BY_EXCLU;
+            break;
         case 'h':
             printf("\
                     \n\

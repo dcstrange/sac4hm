@@ -18,18 +18,34 @@ mkdir ./log/${DATETIME}
 
 array_cachesize=("16G" "32G")
 array_traces=(0 1 2 3 4 5)
-for cachesize in ${array_cachesize[@]}
-do
+# for cachesize in ${array_cachesize[@]}
+# do
+#     for trace in ${array_traces[@]}
+#     do
+#         echo "Testing.. CARS RW LUN"${trace}" in "${cachesize}
+#         #./tools/zbd_set_full /dev/sdc
+#         ./test --algorithm CARS  --workload ${trace} --workload-mode rw --cache-size ${cachesize} --rmw-part 0 > ./log/${DATETIME}/log_cars_rw_LUN${trace}_${cachesize}.log &
+#         echo "Testing.. MOST RW LUN"${trace}" in "${cachesize}
+#         #./tools/zbd_set_full /dev/sdc
+#         ./test --algorithm MOST  --workload ${trace} --workload-mode rw --cache-size ${cachesize} --rmw-part 0 --dirtycache-proportion 0.5 > ./log/${DATETIME}/log_most_rw_LUN${trace}_${cachesize}.log &
+#     done
+# done
+cachesize="16G"
     for trace in ${array_traces[@]}
     do
-        echo "Testing.. CARS WO LUN"${trace}" in "${cachesize}
+        # echo "Testing.. CARS WO LUN"${trace}" in "${cachesize}
+        # #./tools/zbd_set_full /dev/sdc
+        # ./test --algorithm CARS  --workload ${trace} --workload-mode w --cache-size ${cachesize} --rmw-part 0 > ./log/${DATETIME}/log_cars_wo_LUN${trace}_${cachesize}.log &
+        
+        # echo "Testing.. MOST WO LUN"${trace}" in "${cachesize}
+        # #./tools/zbd_set_full /dev/sdc
+        # ./test --algorithm MOST  --workload ${trace} --workload-mode w --cache-size ${cachesize} --rmw-part 0 > ./log/${DATETIME}/log_most_wo_LUN${trace}_${cachesize}.log &
+        
+        # echo "Testing.. CARS-partRMW WO LUN"${trace}" in "${cachesize}
+        # #./tools/zbd_set_full /dev/sdc
+        # ./test --algorithm CARS  --workload ${trace} --workload-mode w --cache-size ${cachesize} --rmw-part 1 > ./log/${DATETIME}/log_cars-partrmw_wo_LUN${trace}_${cachesize}.log &
+
+       echo "Testing.. LRU WO LUN"${trace}" in "${cachesize}
         #./tools/zbd_set_full /dev/sdc
-        ./test --algorithm CARS  --workload ${trace} --cache-size ${cachesize} --rmw-part 0 > ./log/${DATETIME}/log_cars_wo_LUN${trace}_${cachesize}.log &
-        echo "Testing.. MOST WO LUN"${trace}" in "${cachesize}
-        #./tools/zbd_set_full /dev/sdc
-        ./test --algorithm MOST  --workload ${trace} --cache-size ${cachesize} --rmw-part 0 > ./log/${DATETIME}/log_most_wo_LUN${trace}_${cachesize}.log &
+        ./test --algorithm LRUZONE  --workload ${trace} --workload-mode w --cache-size ${cachesize} --rmw-part 0 >  ./log/${DATETIME}/log_lru_wo_LUN${trace}_${cachesize}.log &
     done
-done
-
-
-        ./test --algorithm CARS  --workload 0 --cache-size 16G --rmw-part 0 > ./log/${DATETIME}/log_cars_wo_LUN${trace}_${cachesize}.log
