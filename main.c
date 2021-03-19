@@ -79,30 +79,31 @@ void main(int argc, char **argv){
 
 int InitZBD()
 {
-    /* Detect ZBD and get info*/
-    struct zbc_device_info dev_info;
-    int ret = zbc_device_is_zoned(config_dev_zbd, true, &dev_info);
-
-    if(ret == 1){
-        printf("Zone Block Device %s:\n", config_dev_zbd);
-        zbc_print_device_info(&dev_info, stdout);
-        DASHHH;
-    } else if(ret == 0){
-        printf("%s is not a zoned block device\n", config_dev_zbd);
-        return ret; 
-    } else
-    {
-        fprintf(stderr, 
-                "The given device detect failed %s: %d, %s\n", 
-                config_dev_zbd, ret, strerror(-ret));
-        exit(EXIT_FAILURE);
-    }
-
-/* Open ZBD */
+    int ret = -1;
     if(STT.zbd_drive_type == HM_SMR){
+        /* Detect ZBD and get info*/
+        struct zbc_device_info dev_info;
+        ret = zbc_device_is_zoned(config_dev_zbd, true, &dev_info);
+
+        if(ret == 1){
+            printf("Zone Block Device %s:\n", config_dev_zbd);
+            zbc_print_device_info(&dev_info, stdout);
+            DASHHH;
+        } else if(ret == 0){
+            printf("%s is not a zoned block device\n", config_dev_zbd);
+            return ret; 
+        } else
+        {
+            fprintf(stderr, 
+                    "The given device detect failed %s: %d, %s\n", 
+                    config_dev_zbd, ret, strerror(-ret));
+            exit(EXIT_FAILURE);
+        }
+        /* Open ZBD */
         //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
         ret = zbd_open(config_dev_zbd, O_RDWR | O_DIRECT | ZBD_OFLAG, &STT.ZBD);
-    } else if(STT.zbd_drive_type == DM_SMR) {
+    } 
+    else if(STT.zbd_drive_type == DM_SMR) {
         STT.zbd_fd = open(config_dev_zbd, O_RDWR | O_DIRECT);
         ret = STT.zbd_fd;
     }
@@ -128,7 +129,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 60000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 250000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 

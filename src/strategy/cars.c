@@ -149,10 +149,11 @@ EVICT_READ_BLKS:
         log_info_sac("[cars] reset the timestamp.\n"); 
     }
 
-    if(STT.cpages_r == 0) { goto EVICT_ZONE; }
+    if((STT.cpages_s - STT.cpages_w) == 0) { goto EVICT_ZONE; }
     
 
-    double cost_per_w = (double)msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
+    //double cost_per_w = (double)msec_RMW_part(N_ZONEBLK - zblk_from) / zblks_ars;
+    double cost_per_w = ((double)STT.time_zbd_rmw * 1000 / ((double)STT.rmw_times + 0.1)) / zblks_ars;
     double cost_per_r = (double)STT.time_zbd_read * 1000 / STT.missnum_r;
     log_info_sac("[cars] CostModel r/w: %.1f:%.1f\n", cost_per_r, cost_per_w); 
     
