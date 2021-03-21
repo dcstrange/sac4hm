@@ -439,6 +439,8 @@ int analyze_opts(int argc, char **argv)
                 STT.op_algorithm = ALG_MOST_CMRW;
             else if (strcmp(optarg, "LRUZONE") == 0)
                 STT.op_algorithm = ALG_LRUZONE;
+            else if (strcmp(optarg, "PORE") == 0)
+                STT.op_algorithm = ALG_PORE;
             else
                 STT.op_algorithm = ALG_UNKNOWN;
 

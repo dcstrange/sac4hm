@@ -6,6 +6,7 @@
 #include "most.h"
 #include "most_cmrw.h"
 #include "lru_zone.h"
+#include "pore.h"
 
 /* Cost Model */
 #ifdef ZBD_DRIVE_EMU

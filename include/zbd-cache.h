@@ -25,6 +25,7 @@ enum algorthm_enum
     ALG_MOST_CMRW = 0x03,
     ALG_LRUZONE = 0x04,
     ALG_CARS_PROP = 0x05,
+    ALG_PORE = 0x06,
 };
 
 enum cache_rw_aloc_scheme
@@ -51,6 +52,7 @@ struct zbd_zone{
     uint32_t zoneId;
     int wtpr;                           // in-zone block offset of write pointer
 
+    uint64_t hits; 
     uint32_t cblks;     // cache blocks (for both read and write)
     uint32_t cblks_wtr; // cache blocks for write
 

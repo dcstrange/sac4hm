@@ -320,6 +320,13 @@ void CacheLayer_Init()
             algorithm.hit = lruzone_hit;
             algorithm.GC_privillege = lruzone_writeback_privi;
             break;
+        case ALG_PORE:
+            algorithm.init = cars_pore_init;
+            algorithm.login = cars_pore_login;
+            algorithm.logout = cars_pore_logout;
+            algorithm.hit = cars_pore_hit;
+            algorithm.GC_privillege = cars_pore_writeback_privi;
+            break;
         case ALG_UNKNOWN:
             log_err_sac("[error]func:%s, unknown algorithm. \n", __func__);
             exit(-1);
@@ -409,6 +416,7 @@ retrive_cache_page(uint64_t tg_blk, int op)
     if((op & FOR_WRITE) && !(page->status & FOR_WRITE))
         zone->cblks_wtr ++;
 
+	zone->hits ++;
     page->status |= op;   
     /* algorithm */
     algorithm.hit(page, op);
@@ -565,6 +573,7 @@ static inline int try_recycle_page(struct cache_page *page, int op)
     if(z->cblks == 0){
         free_Bitmap(z->bitmap);
         z->bitmap = NULL;
+        z->hits = 0;
     } else {
         clean_Bit(z->bitmap, page->blkoff_inzone);
     }
