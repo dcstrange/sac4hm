@@ -801,6 +801,7 @@ static int RMW_HM(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk){
     int ret, n = 0;
     struct timeval tv_start, tv_stop;
     ssize_t scope;
+    int dirty_pages = 0;
 
     log_info_sac("[%s] start r-m-w zone [%d] ... ", __func__, zoneId);
     
@@ -822,6 +823,7 @@ static int RMW_HM(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk){
     
     /* Modify */
     // load dirty pages from cache device
+
     static uint32_t valid_pos_chklist[N_ZONEBLK];
     uint32_t n_chklist;
     ret = cache_partread_by_bitmap(zoneId, BUF_RMW, from_blk, to_blk, tg_zone->bitmap, valid_pos_chklist, &n_chklist);
@@ -868,7 +870,7 @@ static int RMW_HM(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk){
 //    static char buf_log[256];
 //    sprintf(buf_log, "%ld, %.2f\n", scope, secs);
 //    log_write_sac(f_log, buf_log);
-    return ret;
+    return dirty_pages;
 }
 
 
