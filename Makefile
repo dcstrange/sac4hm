@@ -21,6 +21,7 @@ OBJ_STRATEGIES = ${STRATEGY_DIR}/cars.o \
 				 ${STRATEGY_DIR}/most_cmrw.o \
 				 ${STRATEGY_DIR}/lru_zone.o \
 				 ${STRATEGY_DIR}/cars_cacheprop.o \
+				 ${STRATEGY_DIR}/pore.o 
 
 TOOLS_DIR = ./tools
 OBJ_TOOLS = ${TOOLS_DIR}/zbd_set_full \
@@ -53,6 +54,7 @@ build-algorithm:
 	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/most_cmrw.c -o ${STRATEGY_DIR}/most_cmrw.o
 	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/lru_zone.c -o ${STRATEGY_DIR}/lru_zone.o
 	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/cars_cacheprop.c -o ${STRATEGY_DIR}/cars_cacheprop.o
+	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/pore.c -o ${STRATEGY_DIR}/pore.o
 
 build-tools:
 	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_full.c -o ${TOOLS_DIR}/zbd_set_full

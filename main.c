@@ -79,28 +79,34 @@ void main(int argc, char **argv){
 
 int InitZBD()
 {
-    /* Detect ZBD and get info*/
-    struct zbc_device_info dev_info;
-    int ret = zbc_device_is_zoned(config_dev_zbd, true, &dev_info);
+    int ret = -1;
+    if(STT.zbd_drive_type == HM_SMR){
+        /* Detect ZBD and get info*/
+        struct zbc_device_info dev_info;
+        ret = zbc_device_is_zoned(config_dev_zbd, true, &dev_info);
 
-    if(ret == 1){
-        printf("Zone Block Device %s:\n", config_dev_zbd);
-        zbc_print_device_info(&dev_info, stdout);
-        DASHHH;
-    } else if(ret == 0){
-        printf("%s is not a zoned block device\n", config_dev_zbd);
-        return ret; 
-    } else
-    {
-        fprintf(stderr, 
-                "The given device detect failed %s: %d, %s\n", 
-                config_dev_zbd, ret, strerror(-ret));
-        exit(EXIT_FAILURE);
+        if(ret == 1){
+            printf("Zone Block Device %s:\n", config_dev_zbd);
+            zbc_print_device_info(&dev_info, stdout);
+            DASHHH;
+        } else if(ret == 0){
+            printf("%s is not a zoned block device\n", config_dev_zbd);
+            return ret; 
+        } else
+        {
+            fprintf(stderr, 
+                    "The given device detect failed %s: %d, %s\n", 
+                    config_dev_zbd, ret, strerror(-ret));
+            exit(EXIT_FAILURE);
+        }
+        /* Open ZBD */
+        //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
+        ret = zbd_open(config_dev_zbd, O_RDWR | O_DIRECT | ZBD_OFLAG, &STT.ZBD);
+    } 
+    else if(STT.zbd_drive_type == DM_SMR) {
+        STT.zbd_fd = open(config_dev_zbd, O_RDWR | O_DIRECT);
+        ret = STT.zbd_fd;
     }
-
-/* Open ZBD */
-    //ret = zbd_open(zbd_path, O_RDWR | __O_DIRECT | ZBC_O_DRV_FAKE, &zbd);
-    ret = zbd_open(config_dev_zbd, O_RDWR | O_DIRECT | ZBD_OFLAG, &STT.ZBD);
 
     if(ret < 0){
         log_err_sac("Open ZBD failed.\n");
@@ -123,7 +129,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 375000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 800000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
@@ -304,9 +310,9 @@ static void reportSTT()
 
     /* 3. ZBD */
     log_info_sac("\n3. ZBD\n");
-    log_info_sac("%12s\t%12s\n%12lu\t%12lu\n", 
-            "rmw_times",    "rmw_scope",
-            STT.rmw_times,  STT.rmw_scope
+    log_info_sac("%12s\t%12s\t%12s\n%12lu\t%12lu\t%12lu\n", 
+            "rmw_times",    "rmw_scope", "evict_range",
+            STT.rmw_times,  STT.rmw_scope, STT.evict_range
         );
 
     log_info_sac("%12s\t%12s\n%12.1lf\t%12.1lf\n", 
@@ -383,6 +389,7 @@ parse_integer (const char *str, int *invalid)
 int analyze_opts(int argc, char **argv)
 {
     static struct option long_options[] = {
+        {"smr-type", required_argument, NULL, 'T'},
         {"cache-dev", required_argument, NULL, 'C'},  // FORCE
         {"smr-dev", required_argument, NULL, 'S'},    // FORCE
         {"workload", required_argument, NULL, 'W'},
@@ -412,6 +419,14 @@ int analyze_opts(int argc, char **argv)
         double propotion = -1;
         switch (opt)
         {
+        
+        case 'T': //DM-SMR or HM-SMR
+            if(strcmp(optarg, "HM") == 0)
+                STT.zbd_drive_type = HM_SMR;
+            else if(strcmp(optarg, "DM") == 0)
+                STT.zbd_drive_type = DM_SMR;
+            printf("[User Setting] SMR drive type: %s.\n", optarg);
+            break;
 
         case 'A': // algorithm
             if (strcmp(optarg, "CARS") == 0)
@@ -424,6 +439,8 @@ int analyze_opts(int argc, char **argv)
                 STT.op_algorithm = ALG_MOST_CMRW;
             else if (strcmp(optarg, "LRUZONE") == 0)
                 STT.op_algorithm = ALG_LRUZONE;
+            else if (strcmp(optarg, "PORE") == 0)
+                STT.op_algorithm = ALG_PORE;
             else
                 STT.op_algorithm = ALG_UNKNOWN;
 

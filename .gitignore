@@ -3,5 +3,6 @@
 *.o
 *.txt
 *.full
+*.sh
 .vscode/
 test
