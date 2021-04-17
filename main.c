@@ -129,7 +129,7 @@ void trace_to_iocall(FILE *trace)
     uint64_t REPORT_INTERVAL_brief = 50000; // 1GB for blksize=4KB
     uint64_t REPORT_INTERVAL = REPORT_INTERVAL_brief * 50; 
 
-    uint64_t total_n_req = 250000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
+    uint64_t total_n_req = 800000000; //125000000; //isWriteOnly ? (blkcnt_t)REPORT_INTERVAL*500*3 : REPORT_INTERVAL*500*3;
 
     uint64_t skiprows = 0;                            //isWriteOnly ?  50000000 : 100000000;
 
@@ -310,9 +310,9 @@ static void reportSTT()
 
     /* 3. ZBD */
     log_info_sac("\n3. ZBD\n");
-    log_info_sac("%12s\t%12s\n%12lu\t%12lu\n", 
-            "rmw_times",    "rmw_scope",
-            STT.rmw_times,  STT.rmw_scope
+    log_info_sac("%12s\t%12s\t%12s\n%12lu\t%12lu\t%12lu\n", 
+            "rmw_times",    "rmw_scope", "evict_range",
+            STT.rmw_times,  STT.rmw_scope, STT.evict_range
         );
 
     log_info_sac("%12s\t%12s\n%12.1lf\t%12.1lf\n", 

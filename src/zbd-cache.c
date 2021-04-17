@@ -123,6 +123,7 @@ struct RuntimeSTAT STT =
     /* 3. ZBD */
     .rmw_scope = 0,
     .rmw_times = 0,
+    .evict_range = 0,
 
     .time_zbd_read = 0,
     .time_zbd_rmw = 0,
@@ -753,7 +754,7 @@ static int RMW_DM(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk){
     int ret, n = 0;
     struct zbd_zone *tg_zone = zones_collection + zoneId;
     uint64_t zone_start = (uint64_t)ZONESIZE * zoneId;
-    ssize_t scope;
+    uint64_t scope, range;
 
     // load dirty pages from cache device
     static uint32_t valid_pos_chklist[N_ZONEBLK];
@@ -778,11 +779,15 @@ static int RMW_DM(uint32_t zoneId, uint64_t from_blk, uint64_t to_blk){
     Lap(&tv_stop);
     double secs = TimerInterval_seconds(&tv_start, &tv_stop);
 
-    scope = to_blk - from_blk;
-    
+    scope = N_ZONEBLK - valid_pos_chklist[0];
+    range = valid_pos_chklist[n_chklist - 1] - valid_pos_chklist[0];
+
     STT.time_zbd_rmw += secs;
     STT.rmw_times ++;
     STT.rmw_scope += scope;
+    STT.evict_range += range;
+
+    log_info_sac("[%s] %.1fsec, scope/range/gcpages: %u/%u/%u\n", __func__, secs, scope, range, n_chklist);
 
     log_info_sac("finish.\n");
 

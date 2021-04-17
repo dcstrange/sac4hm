@@ -142,6 +142,7 @@ struct RuntimeSTAT{
     /* 3. ZBD */
     uint64_t rmw_scope;
     uint64_t rmw_times;
+    uint64_t evict_range;
 
     double time_zbd_read;
     double time_zbd_rmw;
