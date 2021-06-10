@@ -593,9 +593,9 @@ static inline int try_recycle_page(struct cache_page *page, int op)
 
 static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 {
-    //#ifdef NO_REAL_DISK_IO
+    #ifdef NO_REAL_DISK_IO
         return blkcnt;
-    //#endif
+    #endif
 
     uint64_t offset = blkoff * BLKSIZE, 
              nbytes = blkcnt * BLKSIZE;
@@ -613,9 +613,9 @@ static inline int pread_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 
 static inline int pwrite_cache(void *buf, int64_t blkoff, uint64_t blkcnt)
 {
-    //#ifdef NO_REAL_DISK_IO
+    #ifdef NO_REAL_DISK_IO
         return blkcnt;
-    //#endif
+    #endif
 
     uint64_t offset = blkoff * BLKSIZE, 
              nbytes = blkcnt * BLKSIZE;
