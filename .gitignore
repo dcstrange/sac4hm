@@ -4,5 +4,6 @@
 *.txt
 *.full
 *.sh
+*.out
 .vscode/
 test
