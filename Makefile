@@ -57,8 +57,8 @@ build-algorithm:
 	$(CC) $(CFLAGS) -c ${STRATEGY_DIR}/pore.c -o ${STRATEGY_DIR}/pore.o
 
 build-tools:
-	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_full.c -o ${TOOLS_DIR}/zbd_set_full
-	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_empty.c -o ${TOOLS_DIR}/zbd_set_empty
+	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_full.c -o ${TOOLS_DIR}/zbd_set_full.out
+	$(CC) $(CFLAGS) -l$(DLL) ${TOOLS_DIR}/zbd_set_empty.c -o ${TOOLS_DIR}/zbd_set_empty.out
 
 clean: 
 	rm -f ./*.o
