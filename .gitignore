@@ -6,5 +6,4 @@
 *.sh
 *.out
 .vscode/
-*.out
 test
